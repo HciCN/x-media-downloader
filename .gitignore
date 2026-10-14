@@ -12,3 +12,4 @@ node_modules/
 __pycache__/
 *.pyc
 remote_tasks_db.json
+cloudflared.exe
