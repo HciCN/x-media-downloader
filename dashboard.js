@@ -7,6 +7,9 @@
 (function () {
   'use strict';
 
+  // 环境嗅探：判断是 Chrome 扩展环境，还是手机端/纯 Web 局域网访问环境
+  const isExtensionContext = typeof chrome !== 'undefined' && Boolean(chrome?.runtime?.id);
+
   // 全局页面状态
   const state = {
     currentView: 'tasks', // 'tasks', 'detail', 'settings'
@@ -32,6 +35,12 @@
     bindLightboxEvents();
     bindRemoteHubEvents();
 
+    // 如果处于手机浏览器环境，显示移动端徽标
+    if (!isExtensionContext) {
+      const mobileBadge = document.getElementById('mobile-mode-badge');
+      if (mobileBadge) mobileBadge.style.display = 'inline-block';
+    }
+
     // 检查 URL 是否带 task ID
     const urlParams = new URLSearchParams(window.location.search);
     const taskId = urlParams.get('id');
@@ -44,12 +53,14 @@
       await loadTaskList();
     }
 
-    // 监听来自后台的实时下载进度
-    chrome.runtime.onMessage.addListener((msg) => {
-      if (msg && msg.source === 'XMD_BG' && msg.type === 'DOWNLOAD_PROGRESS') {
-        onDownloadProgressUpdate(msg.payload);
-      }
-    });
+    // 仅在 Chrome 扩展环境下监听来自后台的实时下载进度
+    if (isExtensionContext && chrome.runtime?.onMessage) {
+      chrome.runtime.onMessage.addListener((msg) => {
+        if (msg && msg.source === 'XMD_BG' && msg.type === 'DOWNLOAD_PROGRESS') {
+          onDownloadProgressUpdate(msg.payload);
+        }
+      });
+    }
   });
 
   // --- 导航与视图切换 ---
@@ -100,12 +111,27 @@
   // 1. 任务列表视图逻辑
   // =========================================================================
   async function loadTaskList() {
-    chrome.runtime.sendMessage({ type: 'GET_TASK_LIST' }, (res) => {
-      if (res && res.success) {
-        state.tasks = res.tasks || [];
-        renderTaskList();
+    if (isExtensionContext) {
+      chrome.runtime.sendMessage({ type: 'GET_TASK_LIST' }, (res) => {
+        if (res && res.success) {
+          state.tasks = res.tasks || [];
+          renderTaskList();
+          // 静默同步任务至 Python 远程服务
+          syncAllTasksToRemote();
+        }
+      });
+    } else {
+      // 手机端/外部浏览器访问：直接走本地远程 HTTP API
+      try {
+        const res = await fetch('/api/tasks').then(r => r.json());
+        if (res && res.success) {
+          state.tasks = res.tasks || [];
+          renderTaskList();
+        }
+      } catch (err) {
+        console.warn('获取远程任务列表失败:', err);
       }
-    });
+    }
   }
 
   function renderTaskList(searchQuery = '') {
@@ -185,20 +211,43 @@
   // 2. 任务详情与下载大屏逻辑
   // =========================================================================
   async function loadTaskDetail(taskId) {
-    chrome.runtime.sendMessage({ type: 'GET_TASK_DETAIL', payload: { taskId } }, (res) => {
-      if (res && res.success) {
-        state.currentTask = res.task;
-        state.currentItems = res.items || [];
-        state.selectedIds.clear();
-        // 默认全选
-        state.currentItems.forEach(it => state.selectedIds.add(it.id));
+    if (isExtensionContext) {
+      chrome.runtime.sendMessage({ type: 'GET_TASK_DETAIL', payload: { taskId } }, (res) => {
+        if (res && res.success) {
+          state.currentTask = res.task;
+          state.currentItems = res.items || [];
+          state.selectedIds.clear();
+          // 默认全选
+          state.currentItems.forEach(it => state.selectedIds.add(it.id));
 
-        renderDetailDashboard();
-        switchView('detail');
-      } else {
-        alert('加载任务详情失败: ' + (res?.error || '未知错误'));
+          renderDetailDashboard();
+          switchView('detail');
+
+          // 静默同步当前任务和媒体至 Python 远程服务
+          syncSingleTaskToRemote(res.task, res.items);
+        } else {
+          alert('加载任务详情失败: ' + (res?.error || '未知错误'));
+        }
+      });
+    } else {
+      // 手机端/外部浏览器访问：通过 HTTP API 获取单任务详情
+      try {
+        const res = await fetch(`/api/task_detail?id=${encodeURIComponent(taskId || '')}`).then(r => r.json());
+        if (res && res.success && res.task) {
+          state.currentTask = res.task;
+          state.currentItems = res.items || [];
+          state.selectedIds.clear();
+          state.currentItems.forEach(it => state.selectedIds.add(it.id));
+
+          renderDetailDashboard();
+          switchView('detail');
+        } else {
+          alert('远程服务中暂无此任务数据，请在电脑端打开该任务以自动完成同步。');
+        }
+      } catch (err) {
+        console.warn('加载远程任务详情失败:', err);
       }
-    });
+    }
   }
 
   function renderDetailDashboard() {
@@ -776,6 +825,7 @@
   // 4. 设置中心
   // =========================================================================
   async function loadSettings() {
+    if (!isExtensionContext) return;
     chrome.runtime.sendMessage({ type: 'GET_SETTINGS' }, (cfg) => {
       if (cfg) {
         state.settings = cfg;
@@ -795,6 +845,10 @@
     };
 
     document.getElementById('btn-save-settings').onclick = () => {
+      if (!isExtensionContext) {
+        alert('手机端远程观看模式无需调整后台下载线程设置。');
+        return;
+      }
       const payload = {
         concurrency: parseInt(document.getElementById('setting-concurrency').value) || 4,
         folderTemplate: document.getElementById('setting-folder').value.trim() || 'X-Media/{username}',
@@ -813,6 +867,27 @@
   // 5. 安卓移动端离线阅读包生成与局域网远程连接
   // =========================================================================
   function bindRemoteHubEvents() {
+    // 自动探测本地运行的 Python 远程服务器局域网 IP
+    try {
+      fetch('http://127.0.0.1:8080/api/lan_info')
+        .then(r => r.json())
+        .then(info => {
+          if (info && info.ip) {
+            const input = document.getElementById('remote-ip-input');
+            if (input) input.value = info.ip;
+            const targetUrl = `http://${info.ip}:${info.port || 8080}/dashboard.html`;
+            const resBox = document.getElementById('remote-url-result');
+            const linkEl = document.getElementById('remote-url-link');
+            if (linkEl && resBox) {
+              linkEl.href = targetUrl;
+              linkEl.textContent = targetUrl;
+              resBox.style.display = 'block';
+            }
+          }
+        })
+        .catch(() => {});
+    } catch (e) {}
+
     const genBtn = document.getElementById('btn-generate-remote-url');
     if (genBtn) {
       genBtn.onclick = () => {
@@ -832,6 +907,67 @@
         }
       };
     }
+
+    // 一键推送当前任务及任务库至手机远程服务
+    const syncBtn = document.getElementById('btn-sync-to-remote');
+    if (syncBtn) {
+      syncBtn.onclick = async () => {
+        const statusEl = document.getElementById('remote-sync-status');
+        if (statusEl) {
+          statusEl.style.display = 'block';
+          statusEl.style.color = 'var(--text-main)';
+          statusEl.textContent = '⏳ 正在推送任务至手机端服务...';
+        }
+        try {
+          if (state.currentTask && state.currentItems && state.currentItems.length > 0) {
+            await fetch('http://127.0.0.1:8080/api/sync_task', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ task: state.currentTask, items: state.currentItems })
+            });
+          }
+          if (state.tasks && state.tasks.length > 0) {
+            await fetch('http://127.0.0.1:8080/api/sync_all', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ tasks: state.tasks })
+            });
+          }
+          if (statusEl) {
+            statusEl.style.color = 'var(--success)';
+            statusEl.textContent = '✅ 推送成功！手机打开浏览器或扫码即可秒速观看！';
+          }
+        } catch (e) {
+          if (statusEl) {
+            statusEl.style.color = 'var(--error)';
+            statusEl.textContent = '❌ 推送失败，请先双击运行 start_remote_server.bat 启动服务。';
+          }
+        }
+      };
+    }
+  }
+
+  // --- 静默同步辅助函数 ---
+  async function syncSingleTaskToRemote(task, items) {
+    if (!isExtensionContext || !task) return;
+    try {
+      await fetch('http://127.0.0.1:8080/api/sync_task', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task, items: items || [] })
+      });
+    } catch (e) {}
+  }
+
+  async function syncAllTasksToRemote() {
+    if (!isExtensionContext || !state.tasks || state.tasks.length === 0) return;
+    try {
+      await fetch('http://127.0.0.1:8080/api/sync_all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tasks: state.tasks })
+      });
+    } catch (e) {}
   }
 
   // --- 导出安卓移动端原生体验离线阅读单页 (HTML) ---

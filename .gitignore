@@ -11,3 +11,4 @@ node_modules/
 .idea/
 __pycache__/
 *.pyc
+remote_tasks_db.json
