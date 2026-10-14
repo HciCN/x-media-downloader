@@ -436,17 +436,23 @@
     .close-grid-btn {
       background: rgba(255, 255, 255, 0.15);
       color: #fff;
-      border: 1px solid rgba(255, 255, 255, 0.2);
+      border: 1px solid rgba(255, 255, 255, 0.25);
       padding: 5px 12px;
       border-radius: 18px;
       font-size: 12px;
       font-weight: 700;
       cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.15s ease;
+      flex-shrink: 0;
     }
 
-    .close-grid-btn:hover {
+    .close-grid-btn:hover, .close-grid-btn:active {
       background: var(--accent);
       border-color: var(--accent);
+      transform: scale(0.95);
     }
 
     .grid-body {
@@ -827,10 +833,10 @@
       <button class="icon-pill-btn" id="btn-sound-toggle">
         <span id="sound-icon">🔇</span>
       </button>
-      <button class="icon-pill-btn" id="btn-view-mode-toggle">
-        <span id="mode-icon">⊞ 宫格</span>
+      <button class="icon-pill-btn" id="btn-view-mode-toggle" title="查看全部视频与图片">
+        <span id="mode-icon">⊞ 媒体列表</span>
       </button>
-      <a href="/XMediaViewer.apk" download class="icon-pill-btn" style="text-decoration:none; border-color: rgba(29,155,240,0.5); background: rgba(29,155,240,0.2);" title="下载安装安卓专属全屏App (真正100%全屏免浏览器)">
+      <a href="/XMediaViewer.apk" id="nav-apk-download" download class="icon-pill-btn" style="text-decoration:none; border-color: rgba(29,155,240,0.5); background: rgba(29,155,240,0.2);" title="下载安装安卓专属全屏App (真正100%全屏免浏览器)">
         <span style="color:#1d9bf0; font-weight:800;">📲 全屏App</span>
       </a>
       <a href="/dashboard.html" class="icon-pill-btn" style="text-decoration:none;">
@@ -879,15 +885,22 @@
   <!-- 宫格速览视图 (支持四宫格海报与九宫格紧凑模式切换，彻底防止折叠) -->
   <section class="grid-overlay" id="grid-overlay" style="display:none;">
     <div class="grid-header">
-      <div style="font-weight:800; font-size:15px; display:flex; align-items:center; gap:6px;">
-        <span>📁 媒体列表</span>
-        <span style="color:var(--text-sub); font-size:12px;">(<span id="grid-total-count">0</span>)</span>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <button class="close-grid-btn" id="btn-close-grid">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+          <span>返回</span>
+        </button>
+        <div style="font-weight:800; font-size:15px; display:flex; align-items:center; gap:6px;">
+          <span>📁 媒体列表</span>
+          <span style="color:var(--text-sub); font-size:12px;">(<span id="grid-total-count">0</span>)</span>
+        </div>
       </div>
       <div class="grid-mode-switcher">
         <button class="grid-mode-btn active" id="btn-grid-mode-4">⊞ 双列大图</button>
         <button class="grid-mode-btn" id="btn-grid-mode-9">▦ 三列紧凑</button>
       </div>
-      <button class="close-grid-btn" id="btn-close-grid">✕ 返回</button>
     </div>
     <div class="grid-body mode-4" id="grid-body"></div>
   </section>
@@ -932,6 +945,12 @@
 
       // 1. 初始化拉取任务列表
       async function init() {
+        // 如果在原生全屏 App (XMediaViewer) 中打开，隐藏多余的“📲 全屏App”下载按钮
+        if (navigator.userAgent.includes('XMediaViewer') || window.Android) {
+          const apkBtn = document.getElementById('nav-apk-download');
+          if (apkBtn) apkBtn.style.display = 'none';
+        }
+
         try {
           const res = await fetch('/api/tasks');
           const data = await res.json();
