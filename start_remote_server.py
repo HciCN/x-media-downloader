@@ -48,6 +48,7 @@ if sys.platform.startswith('win'):
 
 PORT = 8899
 DATA_FILE = os.path.join(_curr_dir, 'remote_tasks_db.json')
+LIBRARY_CONFIG_FILE = os.path.join(_curr_dir, 'library_config.json')
 
 def get_windows_download_dir():
     """自动获取 Windows 系统真实的默认下载文件夹路径"""
@@ -68,6 +69,42 @@ def get_windows_download_dir():
     return _curr_dir
 
 DL_DIR = get_windows_download_dir()
+
+def load_library_config():
+    """读取所有已配置的片库文件夹路径 (Jellyfin 多片库挂载模式)"""
+    default_libs = [DL_DIR]
+    if not os.path.exists(LIBRARY_CONFIG_FILE):
+        try:
+            with open(LIBRARY_CONFIG_FILE, 'w', encoding='utf-8') as f:
+                json.dump({"libraries": default_libs}, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+        return default_libs
+
+    try:
+        with open(LIBRARY_CONFIG_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            libs = data.get('libraries', [])
+            cleaned = []
+            for item in libs:
+                if not item or not isinstance(item, str):
+                    continue
+                p = os.path.abspath(os.path.expandvars(os.path.expanduser(item.strip())))
+                if p and p not in cleaned:
+                    cleaned.append(p)
+            if not cleaned:
+                cleaned = default_libs
+            return cleaned
+    except Exception:
+        return default_libs
+
+def save_library_config(libs):
+    """持久化保存片库文件夹配置"""
+    try:
+        with open(LIBRARY_CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump({"libraries": libs}, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f">> 保存片库配置失败: {e}")
 
 _IMAGE_CACHE = {}
 
@@ -125,82 +162,84 @@ def generate_avatar_svg(name):
 
 def scan_downloaded_media():
     """
-    自动扫描 Windows 下载目录，智能识别已下载的 X/Twitter 博主文件夹与媒体
-    直接映射为可在手机端立即播放与浏览的任务库，免去用户手动同步操作
+    自动扫描所有已配置的媒体库文件夹 (默认包括 Windows 下载目录及用户自定义挂载的文件夹)
+    智能识别视频 (.mp4, .webm, .mkv, .mov, .ts, .avi) 与图片 (.jpg, .jpeg, .png, .gif, .webp)
+    按子目录聚合为片库博主/合集专辑，支持像 Jellyfin / Emby 一样即刻串流
     """
     tasks = []
     items_map = {}
-    media_exts = {'.mp4', '.jpg', '.jpeg', '.png', '.gif', '.webp'}
+    media_exts = {'.mp4', '.webm', '.mkv', '.mov', '.ts', '.avi', '.jpg', '.jpeg', '.png', '.gif', '.webp'}
+    video_exts = {'.mp4', '.webm', '.mkv', '.mov', '.ts', '.avi'}
 
-    if not os.path.exists(DL_DIR):
-        return tasks, items_map
+    all_libs = load_library_config()
 
-    try:
-        for root, dirs, files in os.walk(DL_DIR):
-            rel = os.path.relpath(root, DL_DIR)
-            depth = len(rel.split(os.sep))
-            if depth > 2:
-                continue
+    for lib_idx, base_dir in enumerate(all_libs):
+        if not os.path.exists(base_dir):
+            continue
 
-            media_files = [f for f in files if os.path.splitext(f.lower())[1] in media_exts]
-            if not media_files:
-                continue
+        try:
+            for root, dirs, files in os.walk(base_dir):
+                rel = os.path.relpath(root, base_dir)
+                depth = 0 if rel == '.' else len(rel.split(os.sep))
+                if depth > 2:
+                    continue
 
-            folder_name = os.path.basename(root)
-            # 识别是否为 X 媒体目录
-            is_x_media = ('x-media' in rel.lower() or 
-                          folder_name.lower().endswith(('_media', '_x_media')) or 
-                          any(re.search(r'_\d{15,22}_', f) for f in media_files))
-            if not is_x_media:
-                continue
+                media_files = [f for f in files if os.path.splitext(f.lower())[1] in media_exts]
+                if not media_files:
+                    continue
 
-            blogger = re.sub(r'(_media|_x_media|_selected)$', '', folder_name, flags=re.I)
-            if blogger.lower() == 'unknown' and 'x-media' in rel.lower():
-                blogger = 'X_Media_Captured'
+                folder_name = os.path.basename(root) if rel != '.' else os.path.basename(base_dir)
+                if not folder_name:
+                    folder_name = f'Library_{lib_idx}'
 
-            # 采用确定性稳定 ID，防止每次重启 Python 时 hash 改变造成任务堆叠重复
-            clean_blogger = re.sub(r'[^a-zA-Z0-9_]', '', blogger) or 'Media'
-            task_id = 'local_' + clean_blogger
-            items = []
+                # 提取博主名或合集名
+                blogger = re.sub(r'(_media|_x_media|_selected)$', '', folder_name, flags=re.I)
+                if blogger.lower() == 'unknown' and 'x-media' in rel.lower():
+                    blogger = 'X_Media_Captured'
 
-            for idx, f in enumerate(sorted(media_files, reverse=True)):
-                ext = os.path.splitext(f.lower())[1]
-                m_type = 'video' if ext == '.mp4' else 'image'
-                tm = re.search(r'_(\d{15,22})_', f)
-                tweet_id = tm.group(1) if tm else ''
+                clean_blogger = re.sub(r'[^a-zA-Z0-9_\u4e00-\u9fa5]', '', blogger) or f'Lib{lib_idx}'
+                task_id = f'lib{lib_idx}_' + clean_blogger
+                items = []
 
-                file_rel = os.path.join(rel, f).replace('\\', '/')
-                if file_rel.startswith('./'):
-                    file_rel = file_rel[2:]
+                for idx, f in enumerate(sorted(media_files, reverse=True)):
+                    ext = os.path.splitext(f.lower())[1]
+                    m_type = 'video' if ext in video_exts else 'image'
+                    tm = re.search(r'_(\d{15,22})_', f)
+                    tweet_id = tm.group(1) if tm else ''
 
-                # 媒体文件大小
-                full_path = os.path.join(root, f)
-                size_mb = round(os.path.getsize(full_path) / (1024 * 1024), 1) if os.path.exists(full_path) else 0
+                    file_rel = (os.path.join(rel, f) if rel != '.' else f).replace('\\', '/')
+                    if file_rel.startswith('./'):
+                        file_rel = file_rel[2:]
 
-                items.append({
-                    'id': f'{task_id}_{idx}',
-                    'mediaType': m_type,
-                    'tweetId': tweet_id,
-                    'tweetText': f'已下载媒体: {f} ({size_mb} MB)',
-                    'mediaUrl': '/media_stream/' + urllib.parse.quote(file_rel),
-                    'thumbUrl': ('/media_stream/' + urllib.parse.quote(file_rel)) if m_type == 'image' else '',
-                    'download_status': 'completed'
+                    full_path = os.path.join(root, f)
+                    size_mb = round(os.path.getsize(full_path) / (1024 * 1024), 1) if os.path.exists(full_path) else 0
+
+                    stream_url = f'/media_stream/{lib_idx}/' + urllib.parse.quote(file_rel)
+                    items.append({
+                        'id': f'{task_id}_{idx}',
+                        'mediaType': m_type,
+                        'tweetId': tweet_id,
+                        'tweetText': f'已归档媒体: {f} ({size_mb} MB)',
+                        'mediaUrl': stream_url,
+                        'thumbUrl': stream_url if m_type == 'image' else '',
+                        'download_status': 'completed'
+                    })
+
+                task_title = f'@{blogger}' if rel != '.' else f'📁 {os.path.basename(base_dir)}'
+                tasks.append({
+                    'id': task_id,
+                    'task_name': f'{task_title} 的媒体库 (本地库)',
+                    'x_name': blogger,
+                    'x_screen_name': clean_blogger,
+                    'x_avatar': f'/api/avatar_svg?name={urllib.parse.quote(clean_blogger)}',
+                    'status': 'completed',
+                    'media_count': len(items),
+                    'completed_count': len(items),
+                    'created_at': int(os.path.getmtime(root) * 1000)
                 })
-
-            tasks.append({
-                'id': task_id,
-                'task_name': f'@{blogger} 的媒体库 (本地已下载)',
-                'x_name': blogger,
-                'x_screen_name': blogger,
-                'x_avatar': f'/api/avatar_svg?name={urllib.parse.quote(blogger)}',
-                'status': 'completed',
-                'media_count': len(items),
-                'completed_count': len(items),
-                'created_at': int(os.path.getmtime(root) * 1000)
-            })
-            items_map[task_id] = items
-    except Exception as e:
-        print(f">> 扫描已下载媒体失败: {e}")
+                items_map[task_id] = items
+        except Exception as e:
+            print(f">> 扫描片库目录 [{base_dir}] 失败: {e}")
 
     return tasks, items_map
 
@@ -517,6 +556,26 @@ class VideoStreamingHTTPRequestHandler(SimpleHTTPRequestHandler):
             self.wfile.write(body)
             return
 
+        # API: 获取所有已挂载的媒体库文件夹 (Jellyfin 多片库模式)
+        if path == '/api/libraries':
+            libs = load_library_config()
+            lib_info = []
+            for idx, p in enumerate(libs):
+                lib_info.append({
+                    'id': idx,
+                    'path': p,
+                    'exists': os.path.exists(p),
+                    'is_default': (os.path.normpath(p) == os.path.normpath(DL_DIR))
+                })
+            body = json.dumps({'success': True, 'libraries': lib_info}, ensure_ascii=False).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.send_header('Content-Length', str(len(body)))
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
         return super().do_GET()
 
     def do_POST(self):
@@ -554,13 +613,93 @@ class VideoStreamingHTTPRequestHandler(SimpleHTTPRequestHandler):
                 self.send_error(500, str(e))
             return
 
+        # API: 自定义添加外部片库文件夹
+        if path == '/api/libraries/add':
+            try:
+                length = int(self.headers.get('Content-Length', 0))
+                req_data = json.loads(self.rfile.read(length).decode('utf-8'))
+                new_path = req_data.get('path', '').strip()
+                if not new_path:
+                    self.send_error(400, "路径不能为空")
+                    return
+                new_path = os.path.abspath(os.path.expandvars(os.path.expanduser(new_path)))
+                if not os.path.exists(new_path):
+                    body = json.dumps({'success': False, 'message': f'文件夹不存在: {new_path}'}, ensure_ascii=False).encode('utf-8')
+                    self.send_response(400)
+                    self.send_header('Content-Type', 'application/json; charset=utf-8')
+                    self.send_header('Content-Length', str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                libs = load_library_config()
+                norm_new = os.path.normpath(new_path)
+                if not any(os.path.normpath(p) == norm_new for p in libs):
+                    libs.append(new_path)
+                    save_library_config(libs)
+                # 重新扫描片库
+                db = load_merged_db()
+                body = json.dumps({'success': True, 'message': f'成功添加媒体库: {new_path}', 'libraries': libs}, ensure_ascii=False).encode('utf-8')
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.send_header('Content-Length', str(len(body)))
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            except Exception as e:
+                self.send_error(500, str(e))
+                return
+
+        # API: 移除外部片库文件夹
+        if path == '/api/libraries/remove':
+            try:
+                length = int(self.headers.get('Content-Length', 0))
+                req_data = json.loads(self.rfile.read(length).decode('utf-8'))
+                target_path = req_data.get('path', '').strip()
+                libs = load_library_config()
+                norm_target = os.path.normpath(target_path)
+                libs = [p for p in libs if os.path.normpath(p) != norm_target]
+                save_library_config(libs)
+                # 重新扫描片库
+                db = load_merged_db()
+                body = json.dumps({'success': True, 'message': '已成功移除该片库', 'libraries': libs}, ensure_ascii=False).encode('utf-8')
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.send_header('Content-Length', str(len(body)))
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            except Exception as e:
+                self.send_error(500, str(e))
+                return
+
         self.send_error(404, "Unknown API")
 
     def send_head(self):
-        # 处理本地媒体流映射: /media_stream/<rel_path>
+        # 处理本地媒体流映射: /media_stream/<lib_idx>/<rel_path> 或兼容老版 /media_stream/<rel_path>
         if self.path.startswith('/media_stream/'):
-            clean_rel = urllib.parse.unquote(self.path[len('/media_stream/'):])
-            file_path = os.path.join(DL_DIR, clean_rel)
+            raw = self.path[len('/media_stream/'):]
+            parts = raw.split('/', 1)
+            libs = load_library_config()
+            file_path = None
+            if len(parts) == 2 and parts[0].isdigit():
+                lib_idx = int(parts[0])
+                clean_rel = urllib.parse.unquote(parts[1])
+                if lib_idx < len(libs):
+                    cand = os.path.join(libs[lib_idx], clean_rel)
+                    if os.path.exists(cand):
+                        file_path = cand
+
+            if not file_path:
+                clean_rel = urllib.parse.unquote(raw)
+                for base in libs:
+                    cand = os.path.join(base, clean_rel)
+                    if os.path.exists(cand):
+                        file_path = cand
+                        break
+                if not file_path:
+                    file_path = os.path.join(DL_DIR, clean_rel)
         else:
             file_path = self.translate_path(self.path)
 
@@ -681,12 +820,20 @@ def print_banner(lan_ip, port, tunnel_url, scanned_tasks):
     except Exception:
         pass
 
-    print("\n  📁 [已自动扫描并挂载本地下载库]：")
+    print("\n  📁 [已挂载的媒体库文件夹 (Jellyfin 多片库模式)]：")
+    libs = load_library_config()
+    for idx, lib in enumerate(libs, 1):
+        status = "✅ 正常" if os.path.exists(lib) else "⚠️ 路径不存在"
+        tag = " (系统默认)" if os.path.normpath(lib) == os.path.normpath(DL_DIR) else " (自定义添加)"
+        print(f"     [{idx}] {lib}{tag} - {status}")
+    print("     💡 提示：可直接编辑 library_config.json 或使用 --add-dir 挂载任意磁盘文件夹！")
+
+    print("\n  🎬 [扫描到的合集与任务]：")
     if scanned_tasks:
         for t in scanned_tasks:
             print(f"     ✅ {t['task_name']} (含 {t['media_count']} 个媒体文件)")
     else:
-        print("     ℹ️ 暂未扫描到 X 媒体文件夹，若在控制台新建下载将自动出现在手机端。")
+        print("     ℹ️ 暂未扫描到媒体文件夹，放入 MP4/图片文件后在手机端点击【重新扫描片库】即可。")
 
     print("\n  💡 使用小贴士：")
     print("  1. 想要【真正100%全屏免浏览器地址栏】：手机直接下载安装上面的【XMediaViewer.apk】！")
@@ -697,6 +844,39 @@ def print_banner(lan_ip, port, tunnel_url, scanned_tasks):
 
 def main():
     os.chdir(_curr_dir)
+
+    import argparse
+    parser = argparse.ArgumentParser(description='X-Media-Downloader Remote Streaming Server')
+    parser.add_argument('--add-dir', help='添加自定义媒体库文件夹路径并退出')
+    parser.add_argument('--list-dirs', action='store_true', help='列出当前已配置的媒体库文件夹并退出')
+    args, _ = parser.parse_known_args()
+
+    if args.add_dir:
+        target = os.path.abspath(os.path.expandvars(os.path.expanduser(args.add_dir.strip())))
+        if not os.path.exists(target):
+            print(f"❌ 错误: 目标文件夹不存在: {target}")
+            return
+        libs = load_library_config()
+        norm_target = os.path.normpath(target)
+        if not any(os.path.normpath(p) == norm_target for p in libs):
+            libs.append(target)
+            save_library_config(libs)
+            print(f"✅ 成功添加媒体库路径: {target}")
+            print(f"当前全部媒体库 ({len(libs)} 个):")
+            for i, p in enumerate(libs, 1):
+                print(f"   [{i}] {p}")
+        else:
+            print(f"ℹ️ 该路径已在媒体库配置中: {target}")
+        return
+
+    if args.list_dirs:
+        libs = load_library_config()
+        print(f"当前已配置的媒体库文件夹 ({len(libs)} 个):")
+        for i, p in enumerate(libs, 1):
+            status = "存在" if os.path.exists(p) else "不存在"
+            print(f"   [{i}] {p} ({status})")
+        return
+
     lan_ip = get_lan_ip()
 
     server = None
