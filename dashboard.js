@@ -137,7 +137,7 @@
       card.innerHTML = `
         <div class="task-card-top">
           <div class="task-card-user">
-            <img class="task-card-avatar" src="${t.x_avatar || ''}" onerror="this.style.display='none'" />
+            <img class="task-card-avatar" src="${t.x_avatar || ''}" />
             <div>
               <div class="task-card-name">${t.x_name || t.task_name || '未命名任务'}</div>
               <div class="task-card-handle">@${t.x_screen_name || 'unknown'}</div>
@@ -155,6 +155,17 @@
           <span>${new Date(t.created_at).toLocaleDateString()}</span>
         </div>
       `;
+
+      const avatarEl = card.querySelector('.task-card-avatar');
+      if (avatarEl) {
+        if (!t.x_avatar) {
+          avatarEl.style.display = 'none';
+        } else {
+          avatarEl.addEventListener('error', () => {
+            avatarEl.style.display = 'none';
+          });
+        }
+      }
 
       card.onclick = () => {
         loadTaskDetail(t.id);
