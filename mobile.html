@@ -404,43 +404,100 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
+      gap: 10px;
+    }
+
+    .grid-mode-switcher {
+      display: flex;
+      background: rgba(255, 255, 255, 0.08);
+      padding: 3px;
+      border-radius: 20px;
+      gap: 4px;
+    }
+
+    .grid-mode-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-sub);
+      padding: 4px 10px;
+      border-radius: 16px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .grid-mode-btn.active {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(29, 155, 240, 0.4);
     }
 
     .close-grid-btn {
-      background: var(--accent);
+      background: rgba(255, 255, 255, 0.15);
       color: #fff;
-      border: none;
-      padding: 6px 14px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      padding: 5px 12px;
       border-radius: 18px;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 700;
       cursor: pointer;
+    }
+
+    .close-grid-btn:hover {
+      background: var(--accent);
+      border-color: var(--accent);
     }
 
     .grid-body {
       flex: 1;
       overflow-y: auto;
-      padding: 10px;
+      padding: 12px;
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
       -webkit-overflow-scrolling: touch;
+      align-content: start;
     }
 
+    .grid-body.mode-4 {
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+
+    .grid-body.mode-9 {
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+
+    /* 稳固防折叠海报卡片 (使用严格的 padding-top 比例，杜绝安卓 WebView 折叠 bug) */
     .grid-thumb-card {
       position: relative;
-      aspect-ratio: 9/16;
+      width: 100%;
+      padding-top: 138%; /* 黄金竖屏比例，绝不折叠 */
+      height: 0;
       background: #16181c;
-      border-radius: 8px;
+      border-radius: 10px;
       overflow: hidden;
       cursor: pointer;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+      transition: transform 0.15s ease, border-color 0.15s ease;
+    }
+
+    .grid-thumb-card:active {
+      transform: scale(0.97);
     }
 
     .grid-thumb-card.active {
       border: 2px solid var(--accent);
     }
 
-    .grid-thumb-img {
+    .grid-thumb-card > * {
+      position: absolute;
+    }
+
+    .grid-thumb-img, .grid-thumb-video {
+      top: 0;
+      left: 0;
       width: 100%;
       height: 100%;
       object-fit: cover;
@@ -449,27 +506,23 @@
     }
 
     .grid-thumb-video {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block;
       pointer-events: none;
       background: #000;
     }
 
     .grid-play-icon {
-      position: absolute;
-      bottom: 6px;
-      left: 6px;
-      width: 22px;
-      height: 22px;
-      background: rgba(0, 0, 0, 0.65);
+      bottom: 8px;
+      left: 8px;
+      width: 24px;
+      height: 24px;
+      background: rgba(0, 0, 0, 0.68);
+      backdrop-filter: blur(4px);
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
       color: #fff;
-      font-size: 9px;
+      font-size: 10px;
       pointer-events: none;
     }
 
@@ -484,6 +537,47 @@
       color: #fff;
       font-weight: 800;
       font-size: 16px;
+    }
+
+    .grid-badge {
+      top: 8px;
+      right: 8px;
+      background: rgba(0,0,0,0.72);
+      backdrop-filter: blur(4px);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 800;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    /* 观看进度条 (Jellyfin 进度记忆风格) */
+    .grid-progress-bar {
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.2);
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    .grid-progress-fill {
+      height: 100%;
+      background: var(--accent);
+      width: 0%;
+    }
+
+    .tag-local {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 800;
+      background: rgba(16, 185, 129, 0.2);
+      color: #10b981;
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      padding: 1px 6px;
+      border-radius: 4px;
+      margin-left: 6px;
     }
 
     .grid-badge {
@@ -782,21 +876,31 @@
   <!-- 双击点赞爱心图层 -->
   <div id="heart-container"></div>
 
-  <!-- 宫格速览视图 -->
+  <!-- 宫格速览视图 (支持四宫格海报与九宫格紧凑模式切换，彻底防止折叠) -->
   <section class="grid-overlay" id="grid-overlay" style="display:none;">
     <div class="grid-header">
-      <div style="font-weight:800; font-size:16px;">⊞ 全部视频与图片 (<span id="grid-total-count">0</span>)</div>
-      <button class="close-grid-btn" id="btn-close-grid">✕ 返回刷视频</button>
+      <div style="font-weight:800; font-size:15px; display:flex; align-items:center; gap:6px;">
+        <span>📁 媒体列表</span>
+        <span style="color:var(--text-sub); font-size:12px;">(<span id="grid-total-count">0</span>)</span>
+      </div>
+      <div class="grid-mode-switcher">
+        <button class="grid-mode-btn active" id="btn-grid-mode-4">⊞ 双列大图</button>
+        <button class="grid-mode-btn" id="btn-grid-mode-9">▦ 三列紧凑</button>
+      </div>
+      <button class="close-grid-btn" id="btn-close-grid">✕ 返回</button>
     </div>
-    <div class="grid-body" id="grid-body"></div>
+    <div class="grid-body mode-4" id="grid-body"></div>
   </section>
 
-  <!-- 切换博主抽屉 -->
+  <!-- 切换博主抽屉 (Jellyfin 风格片库切换与一键重新扫描) -->
   <div class="sheet-mask" id="sheet-mask" style="display:none;">
     <div class="bottom-sheet" id="bottom-sheet">
       <div class="sheet-header">
         <div class="sheet-title">📱 切换博主媒体库</div>
-        <button class="sheet-close" id="btn-close-sheet">✕</button>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <button id="btn-rescan-lib" style="background:rgba(29,155,240,0.15); border:1px solid rgba(29,155,240,0.3); color:#1d9bf0; padding:4px 10px; border-radius:14px; font-size:11px; font-weight:700; cursor:pointer;">🔄 重新扫描片库</button>
+          <button class="sheet-close" id="btn-close-sheet">✕</button>
+        </div>
       </div>
       <div class="sheet-list" id="blogger-list"></div>
     </div>
@@ -1021,6 +1125,13 @@
               vid.ontimeupdate = () => {
                 if (vid.duration) {
                   fill.style.width = `${(vid.currentTime / vid.duration) * 100}%`;
+                  // Jellyfin 风格：记忆播放进度 (超过2秒开始记录)
+                  if (item && item.id && vid.currentTime > 2) {
+                    try {
+                      localStorage.setItem('xmd_seek_' + item.id, vid.currentTime.toFixed(1));
+                      localStorage.setItem('xmd_dur_' + item.id, vid.duration.toFixed(1));
+                    } catch(e) {}
+                  }
                 }
               };
               if (wrap) {
@@ -1093,6 +1204,28 @@
               vid.src = vid.dataset.src;
             }
             vid.muted = state.isMuted;
+
+            // Jellyfin 风格：断点续播检查
+            const currentItem = state.items[index];
+            if (currentItem && currentItem.id && !vid.dataset.resumed) {
+              const savedSeek = parseFloat(localStorage.getItem('xmd_seek_' + currentItem.id) || '0');
+              if (savedSeek > 3) {
+                vid.dataset.resumed = 'true';
+                const restoreTime = () => {
+                  if (vid.duration && savedSeek < vid.duration - 3) {
+                    vid.currentTime = savedSeek;
+                    showToast(`⏱️ 已从上次 ${Math.floor(savedSeek)}s 继续播放`);
+                  }
+                  vid.removeEventListener('loadedmetadata', restoreTime);
+                };
+                if (vid.readyState >= 1) {
+                  restoreTime();
+                } else {
+                  vid.addEventListener('loadedmetadata', restoreTime);
+                }
+              }
+            }
+
             const p = vid.play();
             if (p) {
               p.catch(() => {
@@ -1238,16 +1371,22 @@
         }
       };
 
-      // 7. 宫格视图逻辑 (支持真实视频帧预览 + 播放图标，杜绝黑屏)
+      // 7. 宫格/海报墙视图逻辑 (支持双列四宫格大图与三列九宫格切换 + 进度记忆)
       function renderGrid() {
         gridBody.innerHTML = '';
         document.getElementById('grid-total-count').textContent = state.items.length;
+        setGridMode(state.gridMode || 4);
 
         state.items.forEach((item, idx) => {
           const card = document.createElement('div');
           card.className = 'grid-thumb-card' + (idx === state.currentIndex ? ' active' : '');
           const isVideo = item.mediaType === 'video';
           const src = item.thumbUrl || item.mediaUrl;
+
+          // 进度记忆 (Jellyfin 进度展示)
+          const seekTime = parseFloat(localStorage.getItem('xmd_seek_' + item.id) || '0');
+          const durTime = parseFloat(localStorage.getItem('xmd_dur_' + item.id) || '0');
+          const pct = (seekTime > 0 && durTime > 0) ? Math.min(100, Math.round((seekTime / durTime) * 100)) : 0;
 
           card.innerHTML = `
             ${isVideo ? `
@@ -1258,6 +1397,11 @@
               <img class="grid-thumb-img" src="${src}" loading="lazy" onerror="this.src='/api/avatar_svg?name=IMG'" />
               <span class="grid-badge">IMG</span>
             `}
+            ${pct > 0 ? `
+              <div class="grid-progress-bar">
+                <div class="grid-progress-fill" style="width: ${pct}%"></div>
+              </div>
+            ` : ''}
           `;
           card.onclick = () => {
             gridOverlay.style.display = 'none';
@@ -1271,6 +1415,27 @@
         });
       }
 
+      // 切换四宫格 / 九宫格模式
+      const btnGrid4 = document.getElementById('btn-grid-mode-4');
+      const btnGrid9 = document.getElementById('btn-grid-mode-9');
+
+      function setGridMode(mode) {
+        state.gridMode = mode;
+        localStorage.setItem('xmd_grid_mode', mode);
+        if (mode === 4) {
+          gridBody.className = 'grid-body mode-4';
+          if (btnGrid4) btnGrid4.classList.add('active');
+          if (btnGrid9) btnGrid9.classList.remove('active');
+        } else {
+          gridBody.className = 'grid-body mode-9';
+          if (btnGrid9) btnGrid9.classList.add('active');
+          if (btnGrid4) btnGrid4.classList.remove('active');
+        }
+      }
+
+      if (btnGrid4) btnGrid4.onclick = () => setGridMode(4);
+      if (btnGrid9) btnGrid9.onclick = () => setGridMode(9);
+
       document.getElementById('btn-view-mode-toggle').onclick = () => {
         gridOverlay.style.display = 'flex';
       };
@@ -1278,8 +1443,8 @@
         gridOverlay.style.display = 'none';
       };
 
-      // 8. 切换博主抽屉逻辑
-      document.getElementById('btn-open-drawer').onclick = () => {
+      // 8. 切换博主抽屉逻辑 (Jellyfin 风格结构化片库)
+      function renderBloggerDrawerList() {
         bloggerList.innerHTML = '';
         state.tasks.forEach(t => {
           const item = document.createElement('div');
@@ -1288,6 +1453,7 @@
           const handle = t.x_screen_name || 'X_User';
           const name = t.x_name || t.task_name || handle;
           const initial = escapeHtml((name[0] || 'X').toUpperCase());
+          const isLocal = t.task_name && t.task_name.includes('本地已下载');
 
           const avatarContent = t.x_avatar ? 
             `<img src="${t.x_avatar}" onerror="this.outerHTML='<div class=\\'avatar-letter-circle\\'>${initial}</div>'" style="width:100%;height:100%;border-radius:50%;object-fit:cover;" />` : 
@@ -1298,15 +1464,40 @@
               ${avatarContent}
             </div>
             <div class="blogger-item-info">
-              <div class="blogger-item-name">${escapeHtml(name)} (@${escapeHtml(handle)})</div>
+              <div class="blogger-item-name">
+                ${escapeHtml(name)} (@${escapeHtml(handle)})
+                ${isLocal ? `<span class="tag-local">本地已下载</span>` : ''}
+              </div>
               <div class="blogger-item-count">📹 包含 ${count} 个媒体条目</div>
             </div>
           `;
           item.onclick = () => selectTask(t.id);
           bloggerList.appendChild(item);
         });
+      }
+
+      document.getElementById('btn-open-drawer').onclick = () => {
+        renderBloggerDrawerList();
         sheetMask.style.display = 'flex';
       };
+
+      const btnRescan = document.getElementById('btn-rescan-lib');
+      if (btnRescan) {
+        btnRescan.onclick = async () => {
+          showToast('🔄 正在重新扫描本地片库...');
+          try {
+            const res = await fetch('/api/rescan');
+            const data = await res.json();
+            if (data && data.tasks) {
+              state.tasks = data.tasks;
+              renderBloggerDrawerList();
+              showToast(`✅ 扫描完成，发现 ${state.tasks.length} 个博主库`);
+            }
+          } catch(e) {
+            showToast('❌ 扫描失败');
+          }
+        };
+      }
 
       document.getElementById('btn-close-sheet').onclick = () => {
         sheetMask.style.display = 'none';

@@ -158,7 +158,9 @@ def scan_downloaded_media():
             if blogger.lower() == 'unknown' and 'x-media' in rel.lower():
                 blogger = 'X_Media_Captured'
 
-            task_id = 'local_' + blogger + '_' + str(abs(hash(rel)) % 100000)
+            # 采用确定性稳定 ID，防止每次重启 Python 时 hash 改变造成任务堆叠重复
+            clean_blogger = re.sub(r'[^a-zA-Z0-9_]', '', blogger) or 'Media'
+            task_id = 'local_' + clean_blogger
             items = []
 
             for idx, f in enumerate(sorted(media_files, reverse=True)):
@@ -203,7 +205,12 @@ def scan_downloaded_media():
     return tasks, items_map
 
 def load_merged_db():
-    """读取同步数据库并合并自动扫描到的本地博主媒体库"""
+    """
+    读取并净化片库数据库 (参考 Jellyfin / Plex 刮削与整理机制):
+    1. 以博主用户名 (handle) 为唯一键严格去重归并，杜绝重复与碎片
+    2. 彻底剔除历史孤儿任务、空任务 (如 " 的媒体库")
+    3. 自动同步持久化写入 remote_tasks_db.json，永除后患
+    """
     stored_db = {'tasks': [], 'items': {}}
     if os.path.exists(DATA_FILE):
         try:
@@ -214,39 +221,53 @@ def load_merged_db():
 
     scanned_tasks, scanned_items = scan_downloaded_media()
 
-    # 将自动扫描到的任务与存储的任务合并 (优先展示自动扫描的本地真实任务)
-    all_tasks = []
-    seen_ids = set()
+    # 以博主小写 handle 为 key 进行统一去重
+    blogger_map = {}
+    blogger_items_map = {}
 
+    # 1. 优先载入本地真实下载文件夹 (置信度最高)
     for t in scanned_tasks:
-        if t['id'] not in seen_ids:
-            all_tasks.append(t)
-            seen_ids.add(t['id'])
+        handle = (t.get('x_screen_name') or '').strip()
+        if not handle:
+            continue
+        h_key = handle.lower()
+        blogger_map[h_key] = t
+        blogger_items_map[t['id']] = scanned_items.get(t['id'], [])
 
+    # 2. 归并扩展抓取的任务
     for t in stored_db.get('tasks', []):
-        # 自动补全缺失的博主 handle 与昵称
-        if not t.get('x_screen_name'):
+        handle = (t.get('x_screen_name') or '').strip()
+        if not handle:
             m = re.match(r'@?([a-zA-Z0-9_]+)\s*(?:的媒体库|的推文)?', t.get('task_name', ''))
             if m:
-                t['x_screen_name'] = m.group(1)
+                handle = m.group(1)
+                t['x_screen_name'] = handle
                 if not t.get('x_name'):
-                    t['x_name'] = m.group(1)
-        name = t.get('x_name') or t.get('x_screen_name') or 'X'
-        # 头像补全：如果为空或 twitter 默认图标，生成彩色首字母；若为在线推特链接，走本地代理中继
-        if not t.get('x_avatar') or 'twitter.3.ico' in t.get('x_avatar', ''):
-            t['x_avatar'] = f"/api/avatar_svg?name={urllib.parse.quote(name)}"
-        elif t.get('x_avatar', '').startswith('http') and ('twimg.com' in t.get('x_avatar', '') or 'twitter.com' in t.get('x_avatar', '')):
-            t['x_avatar'] = f"/api/proxy_image?url={urllib.parse.quote(t['x_avatar'])}"
+                    t['x_name'] = handle
+        # 严格过滤无效幽灵任务
+        if not handle or handle.lower() in ('x_user', 'user', 'unknown', 'none') or not t.get('media_count'):
+            continue
+        if '的媒体库' == t.get('task_name', '').strip():
+            continue
 
-        if t['id'] not in seen_ids:
-            all_tasks.append(t)
-            seen_ids.add(t['id'])
+        h_key = handle.lower()
+        if h_key in blogger_map:
+            # 本地已扫描出该博主，保留本地下载置顶标记
+            existing_task = blogger_map[h_key]
+            if t.get('x_avatar') and not t.get('x_avatar', '').startswith('/api/avatar_svg'):
+                existing_task['x_avatar'] = t['x_avatar']
+        else:
+            name = t.get('x_name') or t.get('x_screen_name') or handle
+            if not t.get('x_avatar') or 'twitter.3.ico' in t.get('x_avatar', ''):
+                t['x_avatar'] = f"/api/avatar_svg?name={urllib.parse.quote(name)}"
+            elif t.get('x_avatar', '').startswith('http') and ('twimg.com' in t.get('x_avatar', '') or 'twitter.com' in t.get('x_avatar', '')):
+                t['x_avatar'] = f"/api/proxy_image?url={urllib.parse.quote(t['x_avatar'])}"
 
-    merged_items = dict(stored_db.get('items', {}))
-    merged_items.update(scanned_items)
+            blogger_map[h_key] = t
+            blogger_items_map[t['id']] = stored_db.get('items', {}).get(t['id'], [])
 
-    # 针对未离线下载的媒体文件，自动补齐代理地址，确保手机端无需 VPN 也能加载
-    for tid, items in merged_items.items():
+    # 针对未离线下载的媒体文件，自动补齐代理地址，确保手机端无需 VPN 也能流畅加载
+    for tid, items in blogger_items_map.items():
         for item in items:
             m_url = item.get('mediaUrl', '')
             t_url = item.get('thumbUrl', '')
@@ -258,8 +279,18 @@ def load_merged_db():
             if t_url.startswith('http') and ('twimg.com' in t_url or 'twitter.com' in t_url):
                 item['thumbUrl'] = f"/api/proxy_image?url={urllib.parse.quote(t_url)}"
 
-    all_tasks = [t for t in all_tasks if (t.get('x_screen_name') or t.get('task_name', '').strip())]
-    return {'tasks': all_tasks, 'items': merged_items}
+    clean_tasks = list(blogger_map.values())
+    # 排序：本地已下载排在最前，其次按媒体数量降序
+    clean_tasks.sort(key=lambda x: (0 if '本地已下载' in x.get('task_name', '') else 1, -x.get('media_count', 0)))
+
+    # 保存净化后的纯净数据库，清理旧的垃圾记录
+    try:
+        with open(DATA_FILE, 'w', encoding='utf-8') as f:
+            json.dump({'tasks': clean_tasks, 'items': blogger_items_map}, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+    return {'tasks': clean_tasks, 'items': blogger_items_map}
 
 def save_remote_db(data):
     try:
@@ -461,6 +492,18 @@ class VideoStreamingHTTPRequestHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 self.send_error(502, f"Proxy media error: {e}")
                 return
+
+        # API: 重新扫描并净化本地片库 (Jellyfin 重新扫描片库)
+        if path == '/api/rescan':
+            db = load_merged_db()
+            body = json.dumps({'success': True, 'tasks': db.get('tasks', [])}, ensure_ascii=False).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.send_header('Content-Length', str(len(body)))
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(body)
+            return
 
         # API: 电脑局域网信息
         if path == '/api/lan_info':
