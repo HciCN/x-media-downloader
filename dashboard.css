@@ -669,12 +669,12 @@ body {
   height: 100dvh;
   background: #000000;
   z-index: 9999999;
-  display: flex;
+  display: none !important;
   flex-direction: column;
   justify-content: space-between;
   align-items: stretch;
   opacity: 0;
-  pointer-events: none;
+  pointer-events: none !important;
   transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.15s ease;
   user-select: none;
   -webkit-user-select: none;
@@ -682,8 +682,13 @@ body {
 }
 
 #xmd-lightbox.xmd-gallery-modal.xmd-active {
+  display: flex !important;
   opacity: 1;
-  pointer-events: auto;
+  pointer-events: auto !important;
+}
+
+#xmd-lightbox:not(.xmd-active) * {
+  pointer-events: none !important;
 }
 
 /* 顶部栏 */
@@ -698,7 +703,7 @@ body {
   align-items: center;
   padding: max(16px, env(safe-area-inset-top, 16px)) 20px 14px 20px;
   background: linear-gradient(180deg, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 60%, transparent 100%);
-  pointer-events: auto;
+  pointer-events: none;
 }
 
 .xmd-gallery-info {
@@ -854,6 +859,13 @@ video.xmd-gallery-media {
   gap: 10px;
   padding: 14px 20px max(18px, env(safe-area-inset-bottom, 18px)) 20px;
   background: linear-gradient(0deg, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.5) 65%, transparent 100%);
+  pointer-events: none;
+}
+
+#xmd-lightbox.xmd-active .xmd-gallery-header,
+#xmd-lightbox.xmd-active .xmd-gallery-footer,
+#xmd-lightbox.xmd-active .xmd-gallery-arrow,
+#xmd-lightbox.xmd-active .lightbox-exit-clean-btn {
   pointer-events: auto;
 }
 

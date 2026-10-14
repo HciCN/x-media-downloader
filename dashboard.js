@@ -28,7 +28,7 @@
   };
 
   // --- 初始化启动 ---
-  document.addEventListener('DOMContentLoaded', async () => {
+  function initApp() {
     bindNavigation();
     bindSettingsEvents();
     bindDetailActions();
@@ -46,12 +46,11 @@
     const taskId = urlParams.get('id');
     const tab = urlParams.get('tab');
 
-    await loadSettings();
-
+    loadSettings();
     bindConsoleEvents();
 
     if (taskId) {
-      await loadTaskDetail(taskId);
+      loadTaskDetail(taskId);
     } else if (tab === 'tasks') {
       switchView('tasks');
     } else if (tab === 'libraries') {
@@ -67,7 +66,7 @@
     // 局域网/本机服务模式下，定时同步后台状态与 Cloudflare 隧道上线
     if (!isExtensionContext) {
       setInterval(() => {
-        if (state.currentTab === 'console') {
+        if (state.currentView === 'console') {
           loadServerStats();
         }
       }, 4000);
@@ -81,25 +80,42 @@
         }
       });
     }
-  });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initApp);
+  } else {
+    initApp();
+  }
 
   // --- 导航与视图切换 ---
   function bindNavigation() {
-    document.getElementById('nav-brand-btn').onclick = (e) => {
-      e.preventDefault();
-      switchView('console');
-    };
+    const brandBtn = document.getElementById('nav-brand-btn');
+    if (brandBtn) {
+      brandBtn.onclick = (e) => {
+        e.preventDefault();
+        switchView('console');
+      };
+    }
 
-    const btnConsole = document.getElementById('tab-btn-console');
-    if (btnConsole) btnConsole.onclick = () => switchView('console');
+    const navTabs = [
+      { id: 'tab-btn-console', view: 'console' },
+      { id: 'tab-btn-libraries', view: 'libraries' },
+      { id: 'tab-btn-tasks', view: 'tasks' },
+      { id: 'tab-btn-detail', view: 'detail' },
+      { id: 'tab-btn-remote', view: 'remote' },
+      { id: 'tab-btn-settings', view: 'settings' }
+    ];
 
-    const btnLibs = document.getElementById('tab-btn-libraries');
-    if (btnLibs) btnLibs.onclick = () => switchView('libraries');
-
-    document.getElementById('tab-btn-tasks').onclick = () => switchView('tasks');
-    document.getElementById('tab-btn-detail').onclick = () => switchView('detail');
-    document.getElementById('tab-btn-remote').onclick = () => switchView('remote');
-    document.getElementById('tab-btn-settings').onclick = () => switchView('settings');
+    navTabs.forEach(({ id, view }) => {
+      const btn = document.getElementById(id);
+      if (btn) {
+        btn.onclick = (e) => {
+          e.preventDefault();
+          switchView(view);
+        };
+      }
+    });
 
     const btnGotoLibs = document.getElementById('btn-goto-libs');
     if (btnGotoLibs) btnGotoLibs.onclick = () => switchView('libraries');
@@ -107,13 +123,17 @@
     const btnViewAllTasks = document.getElementById('btn-view-all-tasks');
     if (btnViewAllTasks) btnViewAllTasks.onclick = () => switchView('tasks');
 
-    document.getElementById('detail-back-btn').onclick = () => switchView('tasks');
+    const detailBackBtn = document.getElementById('detail-back-btn');
+    if (detailBackBtn) detailBackBtn.onclick = () => switchView('tasks');
 
     // 搜索过滤
-    document.getElementById('task-search-input').oninput = (e) => {
-      const q = e.target.value.trim().toLowerCase();
-      renderTaskList(q);
-    };
+    const searchInput = document.getElementById('task-search-input');
+    if (searchInput) {
+      searchInput.oninput = (e) => {
+        const q = e.target.value.trim().toLowerCase();
+        renderTaskList(q);
+      };
+    }
   }
 
   function switchView(viewName) {
