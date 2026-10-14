@@ -1,0 +1,11 @@
+# Logs and OS files
+Thumbs.db
+Desktop.ini
+.DS_Store
+*.log
+
+# Temp files
+*.tmp
+node_modules/
+.vscode/
+.idea/

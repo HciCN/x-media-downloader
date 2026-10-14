@@ -1,0 +1,609 @@
+/* X-Media-Downloader UI Styles (Twitter Dark Theme) */
+
+:root {
+  --xmd-bg-primary: #000000;
+  --xmd-bg-secondary: #16181c;
+  --xmd-bg-tertiary: #202327;
+  --xmd-border: #2f3336;
+  --xmd-text-main: #e7e9ea;
+  --xmd-text-muted: #71767b;
+  --xmd-accent: #1d9bf0;
+  --xmd-accent-hover: #1a8cd8;
+  --xmd-success: #00ba7c;
+  --xmd-warning: #ffd400;
+  --xmd-danger: #f91880;
+  --xmd-radius-sm: 8px;
+  --xmd-radius-md: 14px;
+  --xmd-radius-lg: 20px;
+  --xmd-shadow: 0 10px 30px rgba(0, 0, 0, 0.8), 0 0 1px rgba(255, 255, 255, 0.2);
+}
+
+/* 浮动唤起徽标 (支持拖拽) */
+#xmd-float-trigger {
+  position: fixed;
+  bottom: 28px;
+  right: 28px;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: var(--xmd-accent);
+  box-shadow: 0 6px 20px rgba(29, 155, 240, 0.45);
+  cursor: grab;
+  z-index: 999999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: box-shadow 0.2s ease, transform 0.1s ease;
+  user-select: none;
+  touch-action: none;
+}
+
+#xmd-float-trigger.xmd-dragging {
+  cursor: grabbing;
+  transform: scale(1.12);
+  box-shadow: 0 10px 30px rgba(29, 155, 240, 0.75);
+}
+
+#xmd-float-trigger svg {
+  width: 26px;
+  height: 26px;
+  fill: #ffffff;
+  pointer-events: none;
+}
+
+#xmd-float-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: var(--xmd-danger);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 12px;
+  border: 2px solid #000;
+  display: none;
+  pointer-events: none;
+}
+
+/* 主面板容器 */
+#xmd-panel {
+  position: fixed;
+  bottom: 95px;
+  right: 28px;
+  width: 440px;
+  max-width: calc(100vw - 40px);
+  max-height: 85vh;
+  background: rgba(22, 24, 28, 0.95);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--xmd-border);
+  border-radius: var(--xmd-radius-lg);
+  box-shadow: var(--xmd-shadow);
+  z-index: 999999;
+  color: var(--xmd-text-main);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: bottom right;
+}
+
+#xmd-panel.xmd-hidden {
+  opacity: 0;
+  transform: scale(0.92) translateY(20px);
+  pointer-events: none;
+}
+
+/* 面板头部 */
+.xmd-header {
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--xmd-border);
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.xmd-user-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.xmd-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--xmd-bg-tertiary);
+  border: 1px solid var(--xmd-border);
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.xmd-user-names {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.xmd-name {
+  font-weight: 700;
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.xmd-handle {
+  font-size: 13px;
+  color: var(--xmd-text-muted);
+}
+
+.xmd-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.xmd-btn-icon {
+  background: transparent;
+  border: none;
+  color: var(--xmd-text-muted);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.xmd-btn-icon:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--xmd-text-main);
+}
+
+.xmd-btn-icon svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+}
+
+/* 面板主体滚动区域 */
+.xmd-body {
+  padding: 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* 统计卡片网格 */
+.xmd-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.xmd-stat-card {
+  background: var(--xmd-bg-tertiary);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--xmd-radius-sm);
+  padding: 10px;
+  text-align: center;
+}
+
+.xmd-stat-num {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--xmd-text-main);
+}
+
+.xmd-stat-num.accent { color: var(--xmd-accent); }
+.xmd-stat-num.success { color: var(--xmd-success); }
+.xmd-stat-num.warning { color: var(--xmd-warning); }
+
+.xmd-stat-label {
+  font-size: 11px;
+  color: var(--xmd-text-muted);
+  margin-top: 2px;
+}
+
+/* 抓取配置区 */
+.xmd-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--xmd-text-muted);
+  margin-bottom: 8px;
+}
+
+.xmd-options-row {
+  display: flex;
+  gap: 8px;
+}
+
+.xmd-select, .xmd-input {
+  flex: 1;
+  background: var(--xmd-bg-tertiary);
+  border: 1px solid var(--xmd-border);
+  border-radius: var(--xmd-radius-sm);
+  color: var(--xmd-text-main);
+  padding: 8px 12px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.xmd-select:focus, .xmd-input:focus {
+  border-color: var(--xmd-accent);
+}
+
+.xmd-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--xmd-text-main);
+}
+
+.xmd-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.xmd-checkbox-label input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: var(--xmd-accent);
+}
+
+/* 进度条 */
+.xmd-progress-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.xmd-progress-info {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--xmd-text-muted);
+}
+
+.xmd-progress-bar-bg {
+  width: 100%;
+  height: 6px;
+  background: var(--xmd-bg-tertiary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.xmd-progress-bar-fill {
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, var(--xmd-accent), #45b7ff);
+  border-radius: 3px;
+  transition: width 0.25s ease;
+}
+
+.xmd-status-text {
+  font-size: 12px;
+  color: var(--xmd-accent);
+  min-height: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 按钮组 */
+.xmd-btn-group {
+  display: flex;
+  gap: 8px;
+}
+
+.xmd-btn {
+  flex: 1;
+  padding: 10px 14px;
+  border-radius: var(--xmd-radius-sm);
+  font-size: 13px;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+}
+
+.xmd-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.xmd-btn-primary { background: var(--xmd-accent); color: #fff; }
+.xmd-btn-primary:hover:not(:disabled) { background: var(--xmd-accent-hover); }
+
+.xmd-btn-success { background: var(--xmd-success); color: #fff; }
+.xmd-btn-success:hover:not(:disabled) { filter: brightness(1.1); }
+
+.xmd-btn-secondary { background: var(--xmd-bg-tertiary); color: var(--xmd-text-main); border: 1px solid var(--xmd-border); }
+.xmd-btn-secondary:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); }
+
+.xmd-btn-danger { background: rgba(249, 24, 128, 0.15); color: var(--xmd-danger); border: 1px solid rgba(249, 24, 128, 0.3); }
+.xmd-btn-danger:hover:not(:disabled) { background: rgba(249, 24, 128, 0.25); }
+
+/* 导出操作网格 */
+.xmd-export-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+/* 媒体缩略图预览列表 */
+.xmd-gallery-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.xmd-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.xmd-thumb-item {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--xmd-bg-tertiary);
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.xmd-thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.2s;
+}
+
+.xmd-thumb-item:hover .xmd-thumb-img {
+  transform: scale(1.08);
+}
+
+.xmd-thumb-badge {
+  position: absolute;
+  bottom: 3px;
+  right: 3px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+/* ============================================================
+   新特性 1: 内置视频与大图预览 Lightbox 播放器
+   ============================================================ */
+#xmd-lightbox {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  z-index: 1000000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+#xmd-lightbox.xmd-active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.xmd-lightbox-content {
+  position: relative;
+  max-width: 90vw;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.xmd-lightbox-media {
+  max-width: 90vw;
+  max-height: 78vh;
+  border-radius: var(--xmd-radius-md);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.9);
+  outline: none;
+}
+
+.xmd-lightbox-bar {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.xmd-lightbox-btn {
+  padding: 8px 18px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #fff;
+  background: var(--xmd-accent);
+  transition: filter 0.15s;
+}
+
+.xmd-lightbox-btn:hover {
+  filter: brightness(1.15);
+}
+
+.xmd-lightbox-close {
+  position: absolute;
+  top: 20px;
+  right: 24px;
+  background: rgba(255, 255, 255, 0.15);
+  border: none;
+  color: #fff;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.xmd-lightbox-close:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* ============================================================
+   新特性 2: 信息流推文操作栏下载图标与悬浮菜单
+   ============================================================ */
+.xmd-tweet-action-wrap {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+  user-select: none;
+}
+
+.xmd-tweet-dl-btn {
+  background: transparent;
+  border: none;
+  outline: none;
+  cursor: pointer;
+  color: rgb(113, 118, 123);
+  padding: 8px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.xmd-tweet-dl-btn:hover {
+  color: var(--xmd-accent);
+  background-color: rgba(29, 155, 240, 0.1);
+}
+
+.xmd-tweet-dl-btn svg {
+  width: 18.75px;
+  height: 18.75px;
+  fill: currentColor;
+}
+
+.xmd-tweet-dl-btn.xmd-downloaded {
+  color: var(--xmd-success) !important;
+}
+
+/* 多图/视频弹出浮动菜单 */
+.xmd-popover-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(22, 24, 28, 0.98);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--xmd-border);
+  border-radius: var(--xmd-radius-md);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.7);
+  padding: 10px;
+  z-index: 99999;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: xmdFadeIn 0.15s ease-out;
+}
+
+@keyframes xmdFadeIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(6px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+.xmd-popover-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.xmd-popover-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--xmd-bg-tertiary);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.xmd-popover-item:hover {
+  background: rgba(29, 155, 240, 0.15);
+}
+
+.xmd-popover-thumb {
+  width: 34px;
+  height: 34px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+.xmd-popover-label {
+  font-size: 12px;
+  color: var(--xmd-text-main);
+  flex: 1;
+}
+
+.xmd-popover-all-btn {
+  background: var(--xmd-accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: center;
+  transition: background 0.15s;
+}
+
+.xmd-popover-all-btn:hover {
+  background: var(--xmd-accent-hover);
+}
