@@ -1,13 +1,30 @@
 @echo off
-chcp 65001 >nul
-title X-Media-Downloader å®‰å“è¿œç¨‹æµåª’ä½“æœåŠ¡
+title X-Media-Downloader °²×¿Ô¶³ÌÁ÷Ã½Ìå·þÎñ
 set PYTHONDONTWRITEBYTECODE=1
-echo ========================================================
-echo   æ­£åœ¨å¯åŠ¨ X-Media-Downloader å®‰å“è¿œç¨‹æ— çº¿æµåª’ä½“æœåŠ¡...
-echo ========================================================
-python -B "%~dp0start_remote_server.py"
-if %errorlevel% neq 0 (
-    echo.
-    echo æç¤º: æœªæ£€æµ‹åˆ° Python çŽ¯å¢ƒï¼Œè¯·ç¡®ä¿å·²å®‰è£… Python 3 å¹¶å°†å…¶æ·»åŠ åˆ° PATH çŽ¯å¢ƒå˜é‡ä¸­ã€‚
-    pause
+set PYTHONIOENCODING=utf-8
+
+cd /d "%~dp0"
+
+where python >nul 2>&1
+if %errorlevel% equ 0 (
+    python -u -B "start_remote_server.py"
+    goto finish
 )
+
+where py >nul 2>&1
+if %errorlevel% equ 0 (
+    py -u -B "start_remote_server.py"
+    goto finish
+)
+
+echo.
+echo ========================================================
+echo [´íÎó] Î´ÔÚÏµÍ³ÖÐ¼ì²âµ½ Python ÔËÐÐ»·¾³£¡
+echo ÇëÈ·±£µçÄÔÒÑ°²×° Python 3 ²¢Ìí¼Óµ½ PATH »·¾³±äÁ¿¡£
+echo ¹Ù·½ÏÂÔØµØÖ·: https://www.python.org/downloads/
+echo ========================================================
+
+:finish
+echo.
+echo ·þÎñÒÑÍË³ö¡£°´ÈÎÒâ¼ü¹Ø±Õ´Ë´°¿Ú...
+pause >nul

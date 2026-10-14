@@ -26,6 +26,20 @@ import socket
 import re
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 
+# 兼容 Windows 控制台编码，防止 emoji 或中文在部分控制台引发 UnicodeEncodeError
+if sys.platform.startswith('win'):
+    try:
+        os.system('')  # 启用 VT100 控制台转义序列
+    except Exception:
+        pass
+    try:
+        if hasattr(sys.stdout, 'reconfigure'):
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace', line_buffering=True)
+        if hasattr(sys.stderr, 'reconfigure'):
+            sys.stderr.reconfigure(encoding='utf-8', errors='replace', line_buffering=True)
+    except Exception:
+        pass
+
 PORT = 8080
 
 def get_lan_ip():
@@ -104,15 +118,15 @@ class VideoStreamingHTTPRequestHandler(SimpleHTTPRequestHandler):
 def print_banner(lan_ip, port):
     url = f"http://{lan_ip}:{port}/dashboard.html"
     print("\n" + "=" * 65)
-    print("  🚀 X-Media-Downloader 安卓远程流媒体服务已就绪！")
+    print("  >> X-Media-Downloader 安卓远程流媒体服务已就绪！")
     print("=" * 65)
-    print(f"\n  📡 电脑局域网 IP : {lan_ip}")
-    print(f"  📱 手机浏览器访问: \033[92m{url}\033[0m")
-    print("\n  💡 使用方法：")
+    print(f"\n  [IP] 电脑局域网 IP : {lan_ip}")
+    print(f"  [手机] 手机浏览器访问: {url}")
+    print("\n  [使用说明]：")
     print("  1. 确保安卓手机与本电脑连接在【同一个 Wi-Fi (局域网)】下；")
-    print("  2. 在安卓手机自带浏览器、Chrome 或微信中打开上方链接；")
+    print("  2. 在安卓手机自带浏览器、Chrome、夸克或微信中打开上方链接；")
     print("  3. 即可直接无线浏览电脑中所有抓取的推文、大图及流畅播放高码率视频！")
-    print("  4. 视频播放支持 HTTP Range 随心拖动进度条，不占用手机一分钱存储空间！")
+    print("  4. 视频播放支持 HTTP 206 Range 随心拖动进度条，不占用手机存储空间！")
     print("\n  （按 Ctrl + C 可随时停止本服务）")
     print("=" * 65 + "\n")
 
@@ -123,7 +137,7 @@ def main():
     try:
         server = HTTPServer(('0.0.0.0', PORT), VideoStreamingHTTPRequestHandler)
     except OSError as e:
-        print(f"⚠️ 端口 {PORT} 被占用，尝试端口 {PORT + 1}...")
+        print(f">> 端口 {PORT} 被占用，尝试端口 {PORT + 1}...")
         server = HTTPServer(('0.0.0.0', PORT + 1), VideoStreamingHTTPRequestHandler)
 
     actual_port = server.server_port
