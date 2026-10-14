@@ -214,7 +214,7 @@ def scan_downloaded_media():
                     full_path = os.path.join(root, f)
                     size_mb = round(os.path.getsize(full_path) / (1024 * 1024), 1) if os.path.exists(full_path) else 0
 
-                    stream_url = f'/media_stream/{lib_idx}/' + urllib.parse.quote(file_rel)
+                    stream_url = f'/media_stream/{lib_idx}/' + urllib.parse.quote(file_rel) + ('.mstream' if m_type == 'video' else '')
                     items.append({
                         'id': f'{task_id}_{idx}',
                         'mediaType': m_type,
@@ -276,12 +276,12 @@ def load_merged_db():
     # 2. 归并扩展抓取的任务
     for t in stored_db.get('tasks', []):
         handle = (t.get('x_screen_name') or '').strip()
-        if not handle:
-            m = re.match(r'@?([a-zA-Z0-9_]+)\s*(?:的媒体库|的推文)?', t.get('task_name', ''))
+        if not handle or handle.lower() in ('unknown', 'x_user', 'user', 'none'):
+            m = re.match(r'@?([a-zA-Z0-9_\u4e00-\u9fa5]+)\s*(?:的媒体库|的推文)?', t.get('task_name', ''))
             if m:
                 handle = m.group(1)
                 t['x_screen_name'] = handle
-                if not t.get('x_name'):
+                if not t.get('x_name') or t.get('x_name').lower() in ('unknown', 'none'):
                     t['x_name'] = handle
         # 严格过滤无效幽灵任务
         if not handle or handle.lower() in ('x_user', 'user', 'unknown', 'none') or not t.get('media_count'):
@@ -317,6 +317,9 @@ def load_merged_db():
                     item['mediaUrl'] = f"/api/proxy_media?url={urllib.parse.quote(m_url)}"
             if t_url.startswith('http') and ('twimg.com' in t_url or 'twitter.com' in t_url):
                 item['thumbUrl'] = f"/api/proxy_image?url={urllib.parse.quote(t_url)}"
+            # 针对本地视频串流，升级为带有防嗅探 .mstream 后缀，杜绝 IDM 等外部下载器拦截
+            if item.get('mediaType') == 'video' and m_url.startswith('/media_stream/') and not m_url.endswith('.mstream'):
+                item['mediaUrl'] = m_url + '.mstream'
 
     clean_tasks = list(blogger_map.values())
     # 排序：本地已下载排在最前，其次按媒体数量降序
@@ -768,10 +771,35 @@ class VideoStreamingHTTPRequestHandler(SimpleHTTPRequestHandler):
 
         self.send_error(404, "Unknown API")
 
+    def guess_type(self, path):
+        import mimetypes
+        c_type, _ = mimetypes.guess_type(path)
+        if c_type:
+            return c_type
+        ext = os.path.splitext(path.lower())[1]
+        types_map = {
+            '.mp4': 'video/mp4',
+            '.m4v': 'video/mp4',
+            '.webm': 'video/webm',
+            '.mov': 'video/quicktime',
+            '.avi': 'video/x-msvideo',
+            '.mkv': 'video/x-matroska',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.png': 'image/png',
+            '.webp': 'image/webp',
+            '.gif': 'image/gif',
+            '.svg': 'image/svg+xml',
+            '.heic': 'image/heic'
+        }
+        return types_map.get(ext, 'application/octet-stream')
+
     def send_head(self):
         # 处理本地媒体流映射: /media_stream/<lib_idx>/<rel_path> 或兼容老版 /media_stream/<rel_path>
         if self.path.startswith('/media_stream/'):
-            raw = self.path[len('/media_stream/'):]
+            raw = self.path[len('/media_stream/'):].split('?')[0]
+            if raw.endswith('.mstream'):
+                raw = raw[:-len('.mstream')]
             parts = raw.split('/', 1)
             libs = load_library_config()
             file_path = None
@@ -792,51 +820,75 @@ class VideoStreamingHTTPRequestHandler(SimpleHTTPRequestHandler):
                         break
                 if not file_path:
                     file_path = os.path.join(DL_DIR, clean_rel)
+
+            if not file_path or not os.path.exists(file_path) or os.path.isdir(file_path):
+                self.send_error(404, "File not found")
+                return None
+
+            try:
+                f = open(file_path, 'rb')
+            except OSError:
+                self.send_error(404, "File not found")
+                return None
+
+            fs = os.fstat(f.fileno())
+            total_length = fs.st_size
+            range_header = self.headers.get('Range')
+
+            # 如果没有 Range 请求（例如普通图片 <img> 标签请求、整文件下载等），直接以 HTTP 200 返回全文件
+            if not range_header or not range_header.startswith('bytes='):
+                self.send_response(200)
+                self.send_header("Content-Type", self.guess_type(file_path))
+                self.send_header("Content-Length", str(total_length))
+                self.send_header("Content-Disposition", "inline")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Accept-Ranges", "bytes")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Cache-Control", "public, max-age=86400")
+                self.end_headers()
+                return f
+
+            # 处理 Range 分段流式请求 (HTTP 206)
+            match = re.match(r'bytes=(\d+)-(\d*)', range_header)
+            if not match:
+                self.send_response(200)
+                self.send_header("Content-Type", self.guess_type(file_path))
+                self.send_header("Content-Length", str(total_length))
+                self.send_header("Content-Disposition", "inline")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Accept-Ranges", "bytes")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Cache-Control", "public, max-age=86400")
+                self.end_headers()
+                return f
+
+            start_str, end_str = match.groups()
+            start = int(start_str)
+            end = int(end_str) if end_str else total_length - 1
+
+            if start >= total_length:
+                self.send_error(416, "Requested Range Not Satisfiable")
+                f.close()
+                return None
+
+            end = min(end, total_length - 1)
+            content_length = end - start + 1
+
+            self.send_response(206)
+            self.send_header("Content-Type", self.guess_type(file_path))
+            self.send_header("Content-Range", f"bytes {start}-{end}/{total_length}")
+            self.send_header("Content-Length", str(content_length))
+            self.send_header("Content-Disposition", "inline")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Cache-Control", "public, max-age=86400")
+            self.end_headers()
+
+            f.seek(start)
+            return f
         else:
-            file_path = self.translate_path(self.path)
-
-        if os.path.isdir(file_path):
             return super().send_head()
-
-        try:
-            f = open(file_path, 'rb')
-        except OSError:
-            self.send_error(404, "File not found")
-            return None
-
-        range_header = self.headers.get('Range')
-        if not range_header or not range_header.startswith('bytes='):
-            return super().send_head()
-
-        fs = os.fstat(f.fileno())
-        total_length = fs.st_size
-
-        match = re.match(r'bytes=(\d+)-(\d*)', range_header)
-        if not match:
-            return super().send_head()
-
-        start_str, end_str = match.groups()
-        start = int(start_str)
-        end = int(end_str) if end_str else total_length - 1
-
-        if start >= total_length:
-            self.send_error(416, "Requested Range Not Satisfiable")
-            f.close()
-            return None
-
-        end = min(end, total_length - 1)
-        content_length = end - start + 1
-
-        self.send_response(206)
-        self.send_header("Content-Type", self.guess_type(file_path))
-        self.send_header("Content-Range", f"bytes {start}-{end}/{total_length}")
-        self.send_header("Content-Length", str(content_length))
-        self.send_header("Accept-Ranges", "bytes")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.end_headers()
-
-        f.seek(start)
-        return f
 
     def end_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")

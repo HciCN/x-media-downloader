@@ -545,6 +545,49 @@
           下载此文件
         </button>
       </div>
+  </div>
+
+  <!-- 批量下载确认与自定义保存位置弹窗 -->
+  <div id="modal-batch-download" class="modal-backdrop" style="display:none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">🚀 启动批量下载</div>
+        <button class="modal-close" id="btn-close-batch-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group" style="margin-bottom:12px;">
+          <label style="font-size:12px; color:var(--text-muted); display:block; margin-bottom:4px;">目标博主 / 专辑</label>
+          <div id="batch-modal-blogger" style="font-weight:700; color:var(--accent); font-size:15px;"></div>
+        </div>
+        <div class="form-group" style="margin-bottom:14px;">
+          <label style="font-size:12px; color:var(--text-muted); display:block; margin-bottom:4px;">待下载媒体数量</label>
+          <div id="batch-modal-count" style="font-size:13px; color:var(--text-main);"></div>
+        </div>
+        <div class="form-group" style="margin-bottom:14px;">
+          <label for="batch-modal-folder" style="font-size:12px; color:var(--text-main); font-weight:700; display:block; margin-bottom:6px;">
+            📁 自定义保存文件夹路径 (在浏览器下载目录中创建):
+          </label>
+          <input type="text" id="batch-modal-folder" class="form-input" style="width:100%; box-sizing:border-box; font-family:monospace; font-size:13px;" placeholder="例如: X-Media/博主名 或 自定义文件夹名称" />
+          <div style="font-size:11.5px; color:var(--text-muted); margin-top:6px; line-height:1.5;">
+            💡 浏览器下载文件将存放于系统默认下载目录下的该子文件夹中。如需修改电脑总盘符（例如改到 D 盘），可在浏览器设置中修改“下载内容位置”。
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:6px;">
+          <label for="batch-modal-concurrency" style="font-size:12px; color:var(--text-main); font-weight:700; display:block; margin-bottom:6px;">
+            ⚡ 并发下载线程数:
+          </label>
+          <select id="batch-modal-concurrency" class="form-input" style="width:100%; box-sizing:border-box;">
+            <option value="2">2 个线程 (平稳，不卡顿)</option>
+            <option value="4" selected>4 个线程 (推荐)</option>
+            <option value="6">6 个线程 (高速)</option>
+            <option value="8">8 个线程 (极速并发)</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer" style="display:flex; justify-content:flex-end; gap:10px; margin-top:18px;">
+        <button class="btn btn-secondary" id="btn-cancel-batch-download">取消</button>
+        <button class="btn btn-primary" id="btn-confirm-batch-download">立即开始下载</button>
+      </div>
     </div>
   </div>
 

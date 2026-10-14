@@ -64,10 +64,13 @@
   }
 
   function detectCurrentHandle() {
+    if (state.userProfile?.screen_name) return state.userProfile.screen_name;
     const parts = window.location.pathname.split('/').filter(Boolean);
-    if (parts.length > 0 && !['home', 'explore', 'notifications', 'messages', 'search', 'settings', 'i'].includes(parts[0])) {
+    if (parts.length > 0 && !['home', 'explore', 'notifications', 'messages', 'search', 'settings', 'i'].includes(parts[0].toLowerCase())) {
       return parts[0].replace('@', '');
     }
+    const titleMatch = document.title.match(/\(@([a-zA-Z0-9_]+)\)/);
+    if (titleMatch) return titleMatch[1];
     return '';
   }
 
@@ -922,11 +925,18 @@
     const items = Array.from(state.capturedItems.values());
     if (items.length === 0) return;
 
+    const detected = detectCurrentHandle() || 'X_User';
+    const profile = {
+      ...state.userProfile,
+      screen_name: state.userProfile.screen_name || detected,
+      name: state.userProfile.name || detected
+    };
+
     chrome.runtime.sendMessage({
       type: 'CREATE_LOCAL_TASK',
       payload: {
-        task_name: `${state.userProfile.name || detectCurrentHandle()} 的媒体库`,
-        user: state.userProfile,
+        task_name: `${profile.name} 的媒体库`,
+        user: profile,
         media_items: items
       }
     }, (res) => {
@@ -945,23 +955,25 @@
     const ext = item.mediaType === 'video' ? 'mp4' : 'jpg';
     const filename = `${handle}_${item.tweetId || 'media'}_${Date.now()}.${ext}`;
 
-    chrome.runtime.sendMessage({
-      source: 'XMD_CONTENT',
-      type: 'START_DOWNLOAD_BATCH',
-      payload: {
-        items: [item],
-        folderName: `X-Media/${handle}`,
-        concurrency: 1
-      }
-    });
-
-    const a = document.createElement('a');
-    a.href = item.mediaUrl;
-    a.download = filename;
-    a.target = '_blank';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      chrome.runtime.sendMessage({
+        source: 'XMD_CONTENT',
+        type: 'START_DOWNLOAD_BATCH',
+        payload: {
+          items: [item],
+          folderName: `X-Media/${handle}`,
+          concurrency: 1
+        }
+      });
+    } else {
+      const a = document.createElement('a');
+      a.href = item.mediaUrl;
+      a.download = filename;
+      a.target = '_blank';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
   }
 
   // --- 打包所选媒体为 ZIP ---

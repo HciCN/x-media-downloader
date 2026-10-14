@@ -84,8 +84,12 @@ class DownloadManager {
 
   async downloadItem(item) {
     const ext = item.mediaType === 'video' ? 'mp4' : 'jpg';
-    const cleanUser = (item.user?.screen_name || 'unknown').replace(/[\\/:*?"<>|]/g, '');
-    const cleanId = (item.tweetId || 'media').replace(/[\\/:*?"<>|]/g, '');
+    let cleanUser = (item.user?.screen_name || '').trim();
+    if (!cleanUser || cleanUser.toLowerCase() === 'unknown') {
+      cleanUser = (item.folderName || '').split('/').pop() || 'X_User';
+    }
+    cleanUser = cleanUser.replace(/[\\/:*?"<>|]/g, '_');
+    const cleanId = (item.tweetId || 'media').replace(/[\\/:*?"<>|]/g, '_');
     const itemIdx = (item.id || '').slice(-4);
     const filename = `${item.folderName}/${cleanUser}_${cleanId}_${itemIdx}.${ext}`;
 
@@ -148,16 +152,21 @@ class DownloadManager {
         await chrome.storage.local.set({ [itemsKey]: itemsMap });
       }
 
-      // 同时更新任务总计
+      // 核心修复：直接从 itemsMap 统计绝对真实的累计 completed / failed / pending 数量，杜绝被局部批次清零覆盖
       const taskKey = STORAGE_KEYS.TASK_PREFIX + this.currentTaskId;
       const tRes = await chrome.storage.local.get([taskKey]);
       const task = tRes[taskKey];
       if (task) {
-        task.completed_count = this.completedCount;
-        task.failed_count = this.failedCount;
+        const allItems = Object.values(itemsMap);
+        const actualCompleted = allItems.filter(x => x.download_status === 'completed').length;
+        const actualFailed = allItems.filter(x => x.download_status === 'failed').length;
+        const total = task.media_count || allItems.length;
+
+        task.completed_count = actualCompleted;
+        task.failed_count = actualFailed;
         task.updated_at = Date.now();
-        if (this.completedCount + this.failedCount >= task.media_count) {
-          task.status = this.failedCount > 0 ? 'completed_with_errors' : 'completed';
+        if (actualCompleted + actualFailed >= total && total > 0) {
+          task.status = actualFailed > 0 ? 'completed_with_errors' : 'completed';
           task.finished_at = Date.now();
         } else {
           task.status = 'running';
@@ -308,12 +317,22 @@ async function handleCreateTask(data) {
     const taskId = crypto.randomUUID();
     const now = Date.now();
 
+    let screenName = (data.user?.screen_name || '').trim();
+    let name = (data.user?.name || '').trim();
+    if (!screenName || screenName.toLowerCase() === 'unknown') {
+      const m = (data.task_name || '').match(/@?([a-zA-Z0-9_\u4e00-\u9fa5]+)\s*(?:的媒体库)?/);
+      if (m) screenName = m[1];
+    }
+    if (!name || name.toLowerCase() === 'unknown') {
+      name = screenName || 'X_User';
+    }
+
     const taskMeta = {
       id: taskId,
-      task_name: data.task_name || (data.user?.name ? `${data.user.name} 的媒体库` : '媒体抓取任务'),
+      task_name: data.task_name || `${name} 的媒体库`,
       x_uid: data.user?.rest_id || null,
-      x_screen_name: data.user?.screen_name || '',
-      x_name: data.user?.name || '',
+      x_screen_name: screenName || 'X_User',
+      x_name: name || 'X_User',
       x_avatar: data.user?.avatar || '',
       x_description: data.user?.description || '',
       status: 'pending',

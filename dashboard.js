@@ -88,6 +88,20 @@
     initApp();
   }
 
+  // 安全获取博主 Handle 与文件夹名称（杜绝 unknown 命名）
+  function getTaskSafeHandle(t) {
+    if (!t) return 'X_User';
+    let h = (t.x_screen_name || '').trim();
+    if (!h || h.toLowerCase() === 'unknown') {
+      h = (t.x_name || '').trim();
+    }
+    if (!h || h.toLowerCase() === 'unknown') {
+      const m = (t.task_name || '').match(/@?([a-zA-Z0-9_\u4e00-\u9fa5]+)\s*(?:的媒体库)?/);
+      if (m) h = m[1];
+    }
+    return (h || 'X_User').replace(/[\\/:*?"<>|]/g, '_');
+  }
+
   // --- 导航与视图切换 ---
   function bindNavigation() {
     const brandBtn = document.getElementById('nav-brand-btn');
@@ -838,7 +852,7 @@
             <img class="task-card-avatar" src="${t.x_avatar || ''}" />
             <div>
               <div class="task-card-name">${t.x_name || t.task_name || '未命名任务'}</div>
-              <div class="task-card-handle">@${t.x_screen_name || 'unknown'}</div>
+              <div class="task-card-handle">@${getTaskSafeHandle(t)}</div>
             </div>
           </div>
           <span class="status-badge ${statusBadgeClass}">${t.status}</span>
@@ -922,7 +936,7 @@
 
     // 博主信息
     document.getElementById('detail-name').textContent = t.x_name || t.task_name || '未命名博主';
-    document.getElementById('detail-handle').textContent = `@${t.x_screen_name || 'unknown'}`;
+    document.getElementById('detail-handle').textContent = `@${getTaskSafeHandle(t)}`;
     document.getElementById('detail-bio').textContent = t.x_description || '';
     const avatarEl = document.getElementById('detail-avatar');
     if (t.x_avatar) {
@@ -1022,6 +1036,7 @@
     itemEl.className = 'gallery-item' + (state.selectedIds.has(it.id) ? ' selected' : '');
     itemEl.setAttribute('data-id', it.id);
 
+    const isVideo = it.mediaType === 'video';
     const isChecked = state.selectedIds.has(it.id);
     const dotClass = it.download_status === 'completed' ? 'dot-completed' :
                      it.download_status === 'failed' ? 'dot-failed' : 'dot-pending';
@@ -1029,11 +1044,28 @@
     const textPreview = escapeHtml(it.tweetText || '');
     const textDisplay = it.tweetText ? (it.tweetText.slice(0, 36) + (it.tweetText.length > 36 ? '...' : '')) : '查看原推文';
 
+    let mediaHtml = '';
+    if (isVideo) {
+      if (it.thumbUrl && !it.thumbUrl.toLowerCase().endsWith('.mp4')) {
+        mediaHtml = `
+          <img class="gallery-thumb-img" src="${it.thumbUrl}" loading="lazy" onerror="this.outerHTML='<video class=\\'gallery-thumb-img gallery-thumb-video\\' src=\\'${it.mediaUrl}#t=0.001\\' preload=\\'metadata\\' muted playsinline controlsList=\\'nodownload\\'></video>'" />
+          <div class="gallery-video-play-hint">▶</div>
+        `;
+      } else {
+        mediaHtml = `
+          <video class="gallery-thumb-img gallery-thumb-video" src="${it.mediaUrl}#t=0.001" preload="metadata" muted playsinline controlsList="nodownload"></video>
+          <div class="gallery-video-play-hint">▶</div>
+        `;
+      }
+    } else {
+      mediaHtml = `<img class="gallery-thumb-img" src="${it.thumbUrl || it.mediaUrl}" loading="lazy" onerror="this.onerror=null;this.src='/api/avatar_svg?name=IMG'" />`;
+    }
+
     itemEl.innerHTML = `
       <input type="checkbox" class="gallery-checkbox" ${isChecked ? 'checked' : ''} />
       <span class="gallery-status-dot ${dotClass}" title="状态: ${it.download_status || 'pending'}"></span>
-      <img class="gallery-thumb-img" src="${it.thumbUrl || it.mediaUrl}" loading="lazy" />
-      <span class="gallery-badge">${it.mediaType === 'video' ? 'MP4' : 'IMG'}</span>
+      ${mediaHtml}
+      <span class="gallery-badge">${isVideo ? 'MP4' : 'IMG'}</span>
       <div class="gallery-item-overlay">
         <div class="gallery-item-text" title="${textPreview}">${escapeHtml(textDisplay)}</div>
         <div class="gallery-item-footer">
@@ -1064,18 +1096,34 @@
       };
     }
 
-    // 图片加载失败时降级回退到原媒体链接
-    const imgEl = itemEl.querySelector('.gallery-thumb-img');
-    if (imgEl) {
-      imgEl.addEventListener('error', () => {
-        if (imgEl.src !== it.mediaUrl) {
-          imgEl.src = it.mediaUrl;
-        }
-      });
+    // 视频卡片鼠标悬浮预览 (自动播放静音小视频，离开暂停复位)
+    if (isVideo) {
+      const vid = itemEl.querySelector('video');
+      if (vid) {
+        itemEl.addEventListener('mouseenter', () => {
+          try {
+            vid.currentTime = 0;
+            const p = vid.play();
+            if (p) p.catch(() => {});
+          } catch (_) {}
+        });
+        itemEl.addEventListener('mouseleave', () => {
+          try {
+            vid.pause();
+            vid.currentTime = 0.001;
+          } catch (_) {}
+        });
+      }
     }
 
     // 点击打开相册级全屏 Lightbox 播放/查看
     itemEl.onclick = () => {
+      if (isVideo) {
+        const vid = itemEl.querySelector('video');
+        if (vid) {
+          try { vid.pause(); } catch (_) {}
+        }
+      }
       if (list && typeof index === 'number') {
         openLightbox(list, index);
       } else {
@@ -1232,7 +1280,7 @@
       renderActiveView();
     };
 
-    // 开始批量下载
+    // 开始批量下载 (支持弹窗确认与自由自定义下载保存文件夹)
     document.getElementById('btn-start-download').onclick = () => {
       if (!state.currentTask) return;
       const targetItems = state.currentItems.filter(it => it.download_status !== 'completed');
@@ -1241,21 +1289,63 @@
         return;
       }
 
-      const folderName = `X-Media/${state.currentTask.x_screen_name || 'unknown'}`;
-      chrome.runtime.sendMessage({
-        source: 'XMD_CONTENT',
-        type: 'START_DOWNLOAD_BATCH',
-        payload: {
-          items: targetItems,
-          folderName,
-          concurrency: state.settings.concurrency || 4,
-          taskId: state.currentTask.id
-        }
-      }, () => {
-        state.currentTask.status = 'running';
-        renderDetailDashboard();
-      });
+      const safeHandle = getTaskSafeHandle(state.currentTask);
+      const defaultFolder = `X-Media/${safeHandle}`;
+
+      const modal = document.getElementById('modal-batch-download');
+      const bloggerEl = document.getElementById('batch-modal-blogger');
+      const countEl = document.getElementById('batch-modal-count');
+      const folderInput = document.getElementById('batch-modal-folder');
+      const concurrencySelect = document.getElementById('batch-modal-concurrency');
+
+      if (bloggerEl) bloggerEl.textContent = `@${safeHandle} (${state.currentTask.x_name || state.currentTask.task_name})`;
+      if (countEl) countEl.innerHTML = `本次待下载 <strong>${targetItems.length}</strong> 个媒体 (已完成 ${state.currentTask.completed_count || 0} / 共 ${state.currentItems.length} 项)`;
+      if (folderInput) folderInput.value = defaultFolder;
+      if (concurrencySelect) concurrencySelect.value = String(state.settings.concurrency || 4);
+
+      if (modal) modal.style.display = 'flex';
     };
+
+    // 绑定批量下载确认弹窗事件
+    const batchModal = document.getElementById('modal-batch-download');
+    const closeBatchModal = () => {
+      if (batchModal) batchModal.style.display = 'none';
+    };
+    const btnCloseModal = document.getElementById('btn-close-batch-modal');
+    if (btnCloseModal) btnCloseModal.onclick = closeBatchModal;
+    const btnCancelModal = document.getElementById('btn-cancel-batch-download');
+    if (btnCancelModal) btnCancelModal.onclick = closeBatchModal;
+
+    const btnConfirmModal = document.getElementById('btn-confirm-batch-download');
+    if (btnConfirmModal) {
+      btnConfirmModal.onclick = () => {
+        if (!state.currentTask) return;
+        const targetItems = state.currentItems.filter(it => it.download_status !== 'completed');
+        if (targetItems.length === 0) return closeBatchModal();
+
+        const safeHandle = getTaskSafeHandle(state.currentTask);
+        const folderInput = document.getElementById('batch-modal-folder');
+        const concurrencySelect = document.getElementById('batch-modal-concurrency');
+        const customFolder = (folderInput?.value || '').trim() || `X-Media/${safeHandle}`;
+        const concurrency = parseInt(concurrencySelect?.value || '4') || 4;
+
+        chrome.runtime.sendMessage({
+          source: 'XMD_CONTENT',
+          type: 'START_DOWNLOAD_BATCH',
+          payload: {
+            items: targetItems,
+            folderName: customFolder,
+            concurrency,
+            taskId: state.currentTask.id
+          }
+        }, () => {
+          state.currentTask.status = 'running';
+          renderDetailDashboard();
+        });
+
+        closeBatchModal();
+      };
+    }
 
     // 暂停下载
     document.getElementById('btn-pause-download').onclick = () => {
@@ -1270,7 +1360,7 @@
         return;
       }
       failedItems.forEach(it => it.download_status = 'pending');
-      const folderName = `X-Media/${state.currentTask.x_screen_name || 'unknown'}`;
+      const folderName = `X-Media/${getTaskSafeHandle(state.currentTask)}`;
       chrome.runtime.sendMessage({
         source: 'XMD_CONTENT',
         type: 'START_DOWNLOAD_BATCH',
@@ -1288,7 +1378,7 @@
     document.getElementById('btn-redownload-all').onclick = () => {
       if (!confirm('确定要将该任务中的所有媒体重新下载一遍吗？')) return;
       state.currentItems.forEach(it => it.download_status = 'pending');
-      const folderName = `X-Media/${state.currentTask.x_screen_name || 'unknown'}`;
+      const folderName = `X-Media/${getTaskSafeHandle(state.currentTask)}`;
       chrome.runtime.sendMessage({
         source: 'XMD_CONTENT',
         type: 'START_DOWNLOAD_BATCH',
@@ -1741,6 +1831,7 @@
       vid.className = 'xmd-gallery-media';
       vid.src = item.mediaUrl;
       vid.controls = true;
+      vid.setAttribute('controlslist', 'nodownload');
       vid.autoplay = true;
       vid.playsInline = true;
       vid.setAttribute('webkit-playsinline', 'true');

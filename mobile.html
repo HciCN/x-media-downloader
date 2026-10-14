@@ -323,23 +323,143 @@
       color: rgba(255, 255, 255, 0.7);
     }
 
-    /* 视频底部进度条 */
+    /* 视频底部进度条 - 支持手势拖拽、触控扩大区、时间气泡与沉浸式交互 */
     .progress-bar-wrap {
       position: absolute;
       bottom: 0;
       left: 0;
       right: 0;
-      height: 3px;
-      background: rgba(255, 255, 255, 0.2);
-      z-index: 40;
+      height: 38px; /* 38px 充裕触控高度，手机大拇指极易命中拖动 */
+      display: flex;
+      align-items: flex-end;
+      padding-bottom: 2px;
+      z-index: 60;
       cursor: pointer;
+      touch-action: none;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      transition: opacity 0.25s ease;
+    }
+
+    .progress-bar-track {
+      position: relative;
+      width: 100%;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.25);
+      transition: height 0.15s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.15s ease;
     }
 
     .progress-bar-fill {
+      position: relative;
       height: 100%;
       width: 0%;
       background: var(--accent);
-      transition: width 0.1s linear;
+      transition: width 0.08s linear;
+    }
+
+    .progress-bar-thumb {
+      position: absolute;
+      right: -6px;
+      top: 50%;
+      transform: translateY(-50%) scale(0.85);
+      width: 13px;
+      height: 13px;
+      border-radius: 50%;
+      background: #ffffff;
+      box-shadow: 0 1px 6px rgba(0, 0, 0, 0.7);
+      opacity: 0.95;
+      transition: transform 0.15s ease, opacity 0.15s ease;
+    }
+
+    .progress-time-bubble {
+      position: absolute;
+      bottom: 26px;
+      left: 50%;
+      transform: translateX(-50%) translateY(6px);
+      background: rgba(15, 20, 25, 0.92);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      padding: 5px 12px;
+      border-radius: 18px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.18s ease, transform 0.18s ease;
+      white-space: nowrap;
+      z-index: 65;
+    }
+
+    /* 拖拽激活态 */
+    .progress-bar-wrap.dragging .progress-bar-track,
+    .progress-bar-wrap:active .progress-bar-track {
+      height: 6px;
+      background: rgba(255, 255, 255, 0.4);
+    }
+
+    .progress-bar-wrap.dragging .progress-bar-thumb,
+    .progress-bar-wrap:active .progress-bar-thumb {
+      transform: translateY(-50%) scale(1.4);
+      opacity: 1;
+    }
+
+    .progress-bar-wrap.dragging .progress-time-bubble {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .progress-bar-wrap.dragging .progress-bar-fill {
+      transition: none; /* 拖拽时消除延迟，跟手率 100% */
+    }
+
+    /* 喜欢与合集按钮微动效 */
+    .action-btn.btn-like-slide.active .like-circle {
+      background: rgba(255, 36, 66, 0.25);
+      border-color: var(--heart);
+      animation: heartBtnBounce 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    .action-btn.btn-like-slide.active .like-label {
+      color: var(--heart);
+      font-weight: 800;
+    }
+
+    .action-btn.btn-collect-slide.active .action-btn-circle {
+      background: rgba(255, 212, 0, 0.25);
+      border-color: #ffd400;
+    }
+
+    .action-btn.btn-collect-slide.active .action-btn-label {
+      color: #ffd400;
+      font-weight: 800;
+    }
+
+    @keyframes heartBtnBounce {
+      0% { transform: scale(0.8); }
+      50% { transform: scale(1.25); }
+      100% { transform: scale(1); }
+    }
+
+    /* 宫格红心标记 */
+    .grid-fav-badge {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.65);
+      backdrop-filter: blur(4px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--heart);
+      font-size: 11px;
+      z-index: 5;
     }
 
     /* 播放/暂停大图标动效 */
@@ -742,7 +862,12 @@
     }
 
     body.clean-mode .progress-bar-wrap {
-      opacity: 0.35;
+      opacity: 0.45;
+    }
+
+    body.clean-mode .progress-bar-wrap.dragging,
+    body.clean-mode .progress-bar-wrap:active {
+      opacity: 1 !important;
     }
 
     /* 退出清屏悬浮胶囊按钮 */
@@ -884,22 +1009,30 @@
 
   <!-- 宫格速览视图 (支持四宫格海报与九宫格紧凑模式切换，彻底防止折叠) -->
   <section class="grid-overlay" id="grid-overlay" style="display:none;">
-    <div class="grid-header">
-      <div style="display:flex; align-items:center; gap:10px;">
-        <button class="close-grid-btn" id="btn-close-grid">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="15 18 9 12 15 6"></polyline>
-          </svg>
-          <span>返回</span>
-        </button>
-        <div style="font-weight:800; font-size:15px; display:flex; align-items:center; gap:6px;">
-          <span>📁 媒体列表</span>
-          <span style="color:var(--text-sub); font-size:12px;">(<span id="grid-total-count">0</span>)</span>
+    <div class="grid-header" style="flex-direction:column; align-items:stretch; gap:10px;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <button class="close-grid-btn" id="btn-close-grid">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+            <span>返回</span>
+          </button>
+          <div style="font-weight:800; font-size:15px; display:flex; align-items:center; gap:6px;">
+            <span id="grid-header-title">📁 媒体列表</span>
+            <span style="color:var(--text-sub); font-size:12px;">(<span id="grid-total-count">0</span>)</span>
+          </div>
+        </div>
+        <div class="grid-mode-switcher">
+          <button class="grid-mode-btn active" id="btn-grid-mode-4">⊞ 双列大图</button>
+          <button class="grid-mode-btn" id="btn-grid-mode-9">▦ 三列紧凑</button>
         </div>
       </div>
-      <div class="grid-mode-switcher">
-        <button class="grid-mode-btn active" id="btn-grid-mode-4">⊞ 双列大图</button>
-        <button class="grid-mode-btn" id="btn-grid-mode-9">▦ 三列紧凑</button>
+      <div style="display:flex; gap:6px; overflow-x:auto; padding-bottom:2px;" id="grid-filter-bar">
+        <button class="grid-mode-btn active" data-grid-filter="all">全部</button>
+        <button class="grid-mode-btn" data-grid-filter="fav">❤️ 仅看喜欢</button>
+        <button class="grid-mode-btn" data-grid-filter="video">🎬 仅看视频</button>
+        <button class="grid-mode-btn" data-grid-filter="image">🖼️ 仅看图片</button>
       </div>
     </div>
     <div class="grid-body mode-4" id="grid-body"></div>
@@ -909,13 +1042,28 @@
   <div class="sheet-mask" id="sheet-mask" style="display:none;">
     <div class="bottom-sheet" id="bottom-sheet">
       <div class="sheet-header">
-        <div class="sheet-title">📱 切换博主媒体库</div>
+        <div class="sheet-title">📱 切换媒体库与收藏夹</div>
         <div style="display:flex; align-items:center; gap:8px;">
           <button id="btn-rescan-lib" style="background:rgba(29,155,240,0.15); border:1px solid rgba(29,155,240,0.3); color:#1d9bf0; padding:4px 10px; border-radius:14px; font-size:11px; font-weight:700; cursor:pointer;">🔄 重新扫描片库</button>
           <button class="sheet-close" id="btn-close-sheet">✕</button>
         </div>
       </div>
       <div class="sheet-list" id="blogger-list"></div>
+    </div>
+  </div>
+
+  <!-- 收藏到自定义合集抽屉 -->
+  <div class="sheet-mask" id="collection-sheet-mask" style="display:none;">
+    <div class="bottom-sheet" id="collection-bottom-sheet">
+      <div class="sheet-header">
+        <div class="sheet-title">⭐ 收藏到自定义合集</div>
+        <button class="sheet-close" id="btn-close-collection-sheet">✕</button>
+      </div>
+      <div style="padding: 12px 16px 0 16px; display:flex; gap:8px;">
+        <input type="text" id="new-collection-name-input" placeholder="输入新合集名称 (如: 极品短片 / 壁纸)" style="flex:1; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.2); border-radius:18px; padding:8px 14px; color:#fff; font-size:13px; outline:none;" />
+        <button id="btn-create-collection" style="background:var(--accent); border:none; color:#fff; font-weight:700; padding:8px 14px; border-radius:18px; font-size:12px; cursor:pointer; flex-shrink:0;">+ 新建</button>
+      </div>
+      <div class="sheet-list" id="collection-item-list" style="margin-top:10px;"></div>
     </div>
   </div>
 
@@ -1000,13 +1148,355 @@
         }
       }
 
+      // 辅助时间格式化 (00:00)
+      function formatTime(sec) {
+        if (isNaN(sec) || sec < 0) sec = 0;
+        const m = Math.floor(sec / 60);
+        const s = Math.floor(sec % 60);
+        return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+      }
+
+      // 获取条目稳定唯一 Key
+      function getItemKey(item) {
+        return item.id || (item.tweetId ? 'tw_' + item.tweetId : '') || item.mediaUrl || 'item_' + Math.random();
+      }
+
+      // 喜欢 (Favorites) 本地持久化管理器
+      const FavoritesManager = {
+        getMap() {
+          try {
+            return JSON.parse(localStorage.getItem('xmd_favorites') || '{}');
+          } catch(e) {
+            return {};
+          }
+        },
+        saveMap(map) {
+          try {
+            localStorage.setItem('xmd_favorites', JSON.stringify(map));
+          } catch(e) {}
+        },
+        isFav(item) {
+          if (!item) return false;
+          const k = getItemKey(item);
+          const map = this.getMap();
+          return !!map[k];
+        },
+        toggle(item, forceTrue = false) {
+          if (!item) return false;
+          const k = getItemKey(item);
+          const map = this.getMap();
+          let isNowFav = false;
+          if (map[k] && !forceTrue) {
+            delete map[k];
+            isNowFav = false;
+          } else {
+            map[k] = { ...item, _key: k, savedAt: Date.now() };
+            isNowFav = true;
+          }
+          this.saveMap(map);
+          return isNowFav;
+        },
+        getAll() {
+          return Object.values(this.getMap()).sort((a,b) => (b.savedAt || 0) - (a.savedAt || 0));
+        }
+      };
+
+      // 自定义合集 (Collections) 本地持久化管理器
+      const CollectionManager = {
+        getCollections() {
+          try {
+            return JSON.parse(localStorage.getItem('xmd_collections') || '{"默认合集":{"name":"默认合集","items":{}}}');
+          } catch(e) {
+            return { "默认合集": { name: "默认合集", items: {} } };
+          }
+        },
+        saveCollections(colls) {
+          try {
+            localStorage.setItem('xmd_collections', JSON.stringify(colls));
+          } catch(e) {}
+        },
+        createCollection(name) {
+          const trimmed = (name || '').trim();
+          if (!trimmed) return false;
+          const colls = this.getCollections();
+          if (!colls[trimmed]) {
+            colls[trimmed] = { name: trimmed, createdAt: Date.now(), items: {} };
+            this.saveCollections(colls);
+            return true;
+          }
+          return false;
+        },
+        toggleItem(colName, item) {
+          if (!item) return false;
+          const k = getItemKey(item);
+          const colls = this.getCollections();
+          if (!colls[colName]) colls[colName] = { name: colName, items: {} };
+          if (!colls[colName].items) colls[colName].items = {};
+          let has = false;
+          if (colls[colName].items[k]) {
+            delete colls[colName].items[k];
+            has = false;
+          } else {
+            colls[colName].items[k] = { ...item, _key: k, addedAt: Date.now() };
+            has = true;
+          }
+          this.saveCollections(colls);
+          return has;
+        },
+        hasItem(colName, item) {
+          if (!item) return false;
+          const k = getItemKey(item);
+          const colls = this.getCollections();
+          return !!(colls[colName] && colls[colName].items && colls[colName].items[k]);
+        },
+        isItemInAnyCollection(item) {
+          if (!item) return false;
+          const k = getItemKey(item);
+          const colls = this.getCollections();
+          for (const key of Object.keys(colls)) {
+            if (colls[key].items && colls[key].items[k]) return true;
+          }
+          return false;
+        },
+        getItems(colName) {
+          const colls = this.getCollections();
+          if (!colls[colName] || !colls[colName].items) return [];
+          return Object.values(colls[colName].items).sort((a,b) => (b.addedAt || 0) - (a.addedAt || 0));
+        }
+      };
+
+      // 切换虚拟片库 (我的喜欢 / 自定义合集)
+      function selectVirtualTask(virtualId, title, itemsList) {
+        state.currentIndex = 0;
+        sheetMask.style.display = 'none';
+        state.currentTask = {
+          id: virtualId,
+          task_name: title,
+          x_screen_name: virtualId === '__fav__' ? 'Favorites' : 'Collection',
+          x_name: title,
+          x_avatar: ''
+        };
+        state.items = itemsList || [];
+        navName.textContent = `${title} (${state.items.length})`;
+        navAvatar.innerHTML = `<div class="avatar-letter-circle" style="background:${virtualId === '__fav__' ? 'var(--heart)' : '#ffd400'}; color:#fff; font-size:16px;">${virtualId === '__fav__' ? '❤️' : '⭐'}</div>`;
+        renderFeed();
+        renderGrid();
+      }
+
+      // 打开合集选择器抽屉
+      function openCollectionSheet(item) {
+        const mask = document.getElementById('collection-sheet-mask');
+        const list = document.getElementById('collection-item-list');
+        const input = document.getElementById('new-collection-name-input');
+        const btnCreate = document.getElementById('btn-create-collection');
+        if (!mask || !list) return;
+
+        const renderSheetList = () => {
+          list.innerHTML = '';
+          const colls = CollectionManager.getCollections();
+          const names = Object.keys(colls);
+          if (names.length === 0) {
+            list.innerHTML = '<div style="color:var(--text-sub); text-align:center; padding:18px;">暂无合集，请在上方输入名称新建</div>';
+            return;
+          }
+
+          names.forEach(name => {
+            const col = colls[name];
+            const k = getItemKey(item);
+            const has = !!(col.items && col.items[k]);
+            const count = col.items ? Object.keys(col.items).length : 0;
+            const row = document.createElement('div');
+            row.className = 'blogger-item' + (has ? ' current' : '');
+            row.style.cursor = 'pointer';
+            row.innerHTML = `
+              <div class="blogger-item-avatar" style="display:flex; align-items:center; justify-content:center; background:rgba(255,212,0,0.18); color:#ffd400; font-size:20px;">
+                ⭐
+              </div>
+              <div class="blogger-item-info">
+                <div class="blogger-item-name" style="display:flex; justify-content:space-between; align-items:center;">
+                  <span>${escapeHtml(name)}</span>
+                  <span style="font-size:12px; font-weight:700; color:${has ? 'var(--accent)' : 'var(--text-sub)'};">
+                    ${has ? '✓ 已收录' : '+ 加入'}
+                  </span>
+                </div>
+                <div class="blogger-item-count">包含 ${count} 个媒体条目</div>
+              </div>
+            `;
+            row.onclick = () => {
+              const added = CollectionManager.toggleItem(name, item);
+              showToast(added ? `⭐ 已加入合集「${name}」` : `已从合集「${name}」移除`);
+              renderSheetList();
+              updateCollectBtnState(item);
+            };
+            list.appendChild(row);
+          });
+        };
+
+        if (btnCreate) {
+          btnCreate.onclick = () => {
+            const val = input.value.trim();
+            if (!val) return;
+            if (CollectionManager.createCollection(val)) {
+              input.value = '';
+              showToast(`✅ 新建合集「${val}」成功`);
+              renderSheetList();
+            } else {
+              showToast(`⚠️ 该合集已存在`);
+            }
+          };
+        }
+
+        renderSheetList();
+        mask.style.display = 'flex';
+      }
+
+      function updateLikeBtnState(slide, isFav) {
+        const btn = slide.querySelector('.btn-like-slide');
+        if (!btn) return;
+        if (isFav) {
+          btn.classList.add('active');
+          btn.querySelector('.like-circle').innerHTML = `
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="var(--heart)" stroke="var(--heart)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+            </svg>
+          `;
+          btn.querySelector('.like-label').textContent = '已赞';
+        } else {
+          btn.classList.remove('active');
+          btn.querySelector('.like-circle').innerHTML = `
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+            </svg>
+          `;
+          btn.querySelector('.like-label').textContent = '喜欢';
+        }
+      }
+
+      function updateCollectBtnState(item) {
+        const curSlide = state.slideElements[state.currentIndex];
+        if (!curSlide) return;
+        const btn = curSlide.querySelector('.btn-collect-slide');
+        if (!btn) return;
+        const inCol = CollectionManager.isItemInAnyCollection(item);
+        if (inCol) {
+          btn.classList.add('active');
+          btn.querySelector('.action-btn-circle').innerHTML = `
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="#ffd400" stroke="#ffd400" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+            </svg>
+          `;
+        } else {
+          btn.classList.remove('active');
+          btn.querySelector('.action-btn-circle').innerHTML = `
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+            </svg>
+          `;
+        }
+      }
+
+      // 高灵敏度视频进度条触控与拖拽拖动引擎 (解决手机沉浸/普通模式无法拖拽进度条的问题)
+      function initVideoProgressBar(wrap, vid, item) {
+        if (!wrap || !vid) return;
+
+        const fill = wrap.querySelector('.progress-bar-fill');
+        const bubble = wrap.querySelector('.progress-time-bubble');
+
+        let isDragging = false;
+        let wasPaused = false;
+
+        // 播放进度常规驱动
+        vid.ontimeupdate = () => {
+          if (isDragging) return; // 拖动中禁止被常规播放覆盖
+          if (vid.duration) {
+            const pct = (vid.currentTime / vid.duration) * 100;
+            if (fill) fill.style.width = `${pct}%`;
+            if (item && item.id && vid.currentTime > 2) {
+              try {
+                localStorage.setItem('xmd_seek_' + item.id, vid.currentTime.toFixed(1));
+                localStorage.setItem('xmd_dur_' + item.id, vid.duration.toFixed(1));
+              } catch(e) {}
+            }
+          }
+        };
+
+        const updateProgressFromEvent = (e) => {
+          const rect = wrap.getBoundingClientRect();
+          const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+          let pct = (clientX - rect.left) / rect.width;
+          pct = Math.max(0, Math.min(1, pct));
+
+          if (fill) fill.style.width = `${pct * 100}%`;
+          if (bubble && vid.duration) {
+            const cur = pct * vid.duration;
+            bubble.textContent = `${formatTime(cur)} / ${formatTime(vid.duration)}`;
+            const clampLeft = Math.max(14, Math.min(86, pct * 100));
+            bubble.style.left = `${clampLeft}%`;
+          }
+          return pct;
+        };
+
+        // 触摸/鼠标按下开始拖动
+        const startDrag = (e) => {
+          e.stopPropagation();
+          if (e.cancelable && e.type === 'touchstart') e.preventDefault();
+          isDragging = true;
+          wasPaused = vid.paused;
+          vid.pause();
+          wrap.classList.add('dragging');
+          updateProgressFromEvent(e);
+        };
+
+        // 拖动中
+        const onDrag = (e) => {
+          if (!isDragging) return;
+          e.stopPropagation();
+          if (e.cancelable) e.preventDefault();
+          updateProgressFromEvent(e);
+        };
+
+        // 释放结束拖动
+        const stopDrag = (e) => {
+          if (!isDragging) return;
+          e.stopPropagation();
+          isDragging = false;
+          wrap.classList.remove('dragging');
+          const pct = updateProgressFromEvent(e);
+          if (vid.duration) {
+            vid.currentTime = pct * vid.duration;
+          }
+          if (!wasPaused) {
+            vid.play().catch(() => {});
+          }
+        };
+
+        // 触屏手势监听 (touch-action: none 确保不与上下滑动切片冲突)
+        wrap.addEventListener('touchstart', startDrag, { passive: false });
+        window.addEventListener('touchmove', onDrag, { passive: false });
+        window.addEventListener('touchend', stopDrag, { passive: false });
+        window.addEventListener('touchcancel', stopDrag, { passive: false });
+
+        // 桌面端鼠标拖拽与点击
+        wrap.addEventListener('mousedown', (e) => {
+          startDrag(e);
+          const onMouseMove = (ev) => onDrag(ev);
+          const onMouseUp = (ev) => {
+            stopDrag(ev);
+            window.removeEventListener('mousemove', onMouseMove);
+            window.removeEventListener('mouseup', onMouseUp);
+          };
+          window.addEventListener('mousemove', onMouseMove);
+          window.addEventListener('mouseup', onMouseUp);
+        });
+      }
+
       // 3. 渲染全屏抖音瀑布流 Slides
       function renderFeed() {
         feed.innerHTML = '';
         state.slideElements = [];
 
         if (state.items.length === 0) {
-          feed.innerHTML = '<div class="empty-state">该博主暂无已抓取或已下载的媒体</div>';
+          feed.innerHTML = '<div class="empty-state">该媒体库暂无已抓取或已下载的媒体</div>';
           return;
         }
 
@@ -1022,6 +1512,8 @@
           const authorHandle = state.currentTask?.x_screen_name || 'X_User';
           const authorName = state.currentTask?.x_name || authorHandle;
           const tweetText = (item.tweetText || '').trim();
+          const isFav = FavoritesManager.isFav(item);
+          const isInCol = CollectionManager.isItemInAnyCollection(item);
 
           // 幻灯片 DOM 结构
           slide.innerHTML = `
@@ -1040,18 +1532,38 @@
                   ${index === 0 ? `src="${item.mediaUrl}"` : ''}
                 ></video>
               ` : `
-                <img class="slide-media" src="${item.mediaUrl}" loading="lazy" />
+                <img class="slide-media" src="${item.mediaUrl}" onerror="this.onerror=null;this.src='/api/avatar_svg?name=IMG'" />
               `}
             </div>
 
             <!-- 右侧悬浮操作栏 (仿抖音) -->
             <div class="right-bar">
-              <div class="action-btn">
+              <div class="action-btn" onclick="document.getElementById('btn-open-drawer').click()" title="切换媒体库或合集">
                 <div class="action-btn-circle" style="border: 2px solid var(--accent); padding: 2px;">
                   <span style="font-size:18px;">👤</span>
                 </div>
-                <span class="action-btn-label">博主</span>
+                <span class="action-btn-label">片库</span>
               </div>
+
+              <!-- 喜欢 / 点赞爱心按钮 -->
+              <button class="action-btn btn-like-slide ${isFav ? 'active' : ''}" data-index="${index}" title="点击喜欢或取消喜欢">
+                <div class="action-btn-circle like-circle">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="${isFav ? 'var(--heart)' : 'none'}" stroke="${isFav ? 'var(--heart)' : 'currentColor'}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                  </svg>
+                </div>
+                <span class="action-btn-label like-label">${isFav ? '已赞' : '喜欢'}</span>
+              </button>
+
+              <!-- 自定义合集按钮 -->
+              <button class="action-btn btn-collect-slide ${isInCol ? 'active' : ''}" data-index="${index}" title="加入自定义合集">
+                <div class="action-btn-circle">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="${isInCol ? '#ffd400' : 'none'}" stroke="${isInCol ? '#ffd400' : 'currentColor'}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                  </svg>
+                </div>
+                <span class="action-btn-label">合集</span>
+              </button>
 
               <!-- 清屏无干扰快捷按钮 -->
               <button class="action-btn btn-clean-slide" title="清屏模式 (隐藏文字与图标)">
@@ -1100,10 +1612,15 @@
               </div>
             </div>
 
-            <!-- 底部细线条进度条 -->
+            <!-- 底部细线条进度条 (可触摸拖拽，显示时间气泡) -->
             ${isVideo ? `
               <div class="progress-bar-wrap">
-                <div class="progress-bar-fill"></div>
+                <div class="progress-time-bubble">00:00 / 00:00</div>
+                <div class="progress-bar-track">
+                  <div class="progress-bar-fill">
+                    <div class="progress-bar-thumb"></div>
+                  </div>
+                </div>
               </div>
             ` : ''}
           `;
@@ -1114,6 +1631,32 @@
             textEl.onclick = (e) => {
               e.stopPropagation();
               textEl.classList.toggle('expanded');
+            };
+          }
+
+          // 绑定点赞爱心按钮
+          const likeBtn = slide.querySelector('.btn-like-slide');
+          if (likeBtn) {
+            likeBtn.onclick = (e) => {
+              e.stopPropagation();
+              const isNowFav = FavoritesManager.toggle(item);
+              updateLikeBtnState(slide, isNowFav);
+              if (isNowFav) {
+                const rect = likeBtn.getBoundingClientRect();
+                triggerHeartAnimation(rect.left + rect.width / 2, rect.top);
+                showToast('❤️ 已加入我的喜欢');
+              } else {
+                showToast('💔 已取消喜欢');
+              }
+            };
+          }
+
+          // 绑定合集按钮
+          const colBtn = slide.querySelector('.btn-collect-slide');
+          if (colBtn) {
+            colBtn.onclick = (e) => {
+              e.stopPropagation();
+              openCollectionSheet(item);
             };
           }
 
@@ -1135,32 +1678,12 @@
             };
           }
 
-          // 绑定视频进度更新
+          // 绑定带触控拖拽的高级视频进度条
           if (isVideo) {
             const vid = slide.querySelector('video');
-            const fill = slide.querySelector('.progress-bar-fill');
             const wrap = slide.querySelector('.progress-bar-wrap');
-            if (vid && fill) {
-              vid.ontimeupdate = () => {
-                if (vid.duration) {
-                  fill.style.width = `${(vid.currentTime / vid.duration) * 100}%`;
-                  // Jellyfin 风格：记忆播放进度 (超过2秒开始记录)
-                  if (item && item.id && vid.currentTime > 2) {
-                    try {
-                      localStorage.setItem('xmd_seek_' + item.id, vid.currentTime.toFixed(1));
-                      localStorage.setItem('xmd_dur_' + item.id, vid.duration.toFixed(1));
-                    } catch(e) {}
-                  }
-                }
-              };
-              if (wrap) {
-                wrap.onclick = (e) => {
-                  e.stopPropagation();
-                  const rect = wrap.getBoundingClientRect();
-                  const pct = (e.clientX - rect.left) / rect.width;
-                  if (vid.duration) vid.currentTime = pct * vid.duration;
-                };
-              }
+            if (vid && wrap) {
+              initVideoProgressBar(wrap, vid, item);
             }
           }
 
@@ -1319,9 +1842,12 @@
 
           const now = Date.now();
           if (now - lastTap < 300) {
-            // 双击点赞
+            // 双击点赞爱心
             clearTimeout(tapTimeout);
             triggerHeartAnimation(e.clientX, e.clientY);
+            const isNowFav = FavoritesManager.toggle(item, true); // 强制设为喜欢
+            updateLikeBtnState(slide, true);
+            showToast('❤️ 已加入我的喜欢');
           } else {
             // 单击暂停/播放
             tapTimeout = setTimeout(() => {
@@ -1390,17 +1916,38 @@
         }
       };
 
-      // 7. 宫格/海报墙视图逻辑 (支持双列四宫格大图与三列九宫格切换 + 进度记忆)
+      // 7. 宫格/海报墙视图逻辑 (支持双列四宫格大图与三列九宫格切换 + 进度记忆 + 喜欢标记与类型过滤)
+      let currentGridFilter = 'all';
+
       function renderGrid() {
         gridBody.innerHTML = '';
-        document.getElementById('grid-total-count').textContent = state.items.length;
+        const favMap = FavoritesManager.getMap();
+
+        // 筛选逻辑
+        let filteredItems = state.items;
+        if (currentGridFilter === 'fav') {
+          filteredItems = state.items.filter(it => !!favMap[getItemKey(it)]);
+        } else if (currentGridFilter === 'video') {
+          filteredItems = state.items.filter(it => it.mediaType === 'video');
+        } else if (currentGridFilter === 'image') {
+          filteredItems = state.items.filter(it => it.mediaType === 'image');
+        }
+
+        document.getElementById('grid-total-count').textContent = filteredItems.length;
         setGridMode(state.gridMode || 4);
 
-        state.items.forEach((item, idx) => {
+        if (filteredItems.length === 0) {
+          gridBody.innerHTML = `<div style="grid-column: 1 / -1; color: var(--text-sub); text-align: center; padding: 48px 16px;">暂无匹配的媒体条目</div>`;
+          return;
+        }
+
+        filteredItems.forEach((item) => {
+          const originalIndex = state.items.indexOf(item);
           const card = document.createElement('div');
-          card.className = 'grid-thumb-card' + (idx === state.currentIndex ? ' active' : '');
+          card.className = 'grid-thumb-card' + (originalIndex === state.currentIndex ? ' active' : '');
           const isVideo = item.mediaType === 'video';
           const src = item.thumbUrl || item.mediaUrl;
+          const isFav = !!favMap[getItemKey(item)];
 
           // 进度记忆 (Jellyfin 进度展示)
           const seekTime = parseFloat(localStorage.getItem('xmd_seek_' + item.id) || '0');
@@ -1408,12 +1955,13 @@
           const pct = (seekTime > 0 && durTime > 0) ? Math.min(100, Math.round((seekTime / durTime) * 100)) : 0;
 
           card.innerHTML = `
+            ${isFav ? `<div class="grid-fav-badge" title="已喜欢">❤️</div>` : ''}
             ${isVideo ? `
-              <video class="grid-thumb-video" src="${item.mediaUrl}#t=0.001" preload="metadata" muted playsinline></video>
+              <video class="grid-thumb-video" src="${item.mediaUrl}#t=0.001" preload="metadata" muted playsinline controlsList="nodownload"></video>
               <div class="grid-play-icon">▶</div>
               <span class="grid-badge">MP4</span>
             ` : `
-              <img class="grid-thumb-img" src="${src}" loading="lazy" onerror="this.src='/api/avatar_svg?name=IMG'" />
+              <img class="grid-thumb-img" src="${src}" loading="lazy" onerror="this.onerror=null;this.src='/api/avatar_svg?name=IMG'" />
               <span class="grid-badge">IMG</span>
             `}
             ${pct > 0 ? `
@@ -1425,12 +1973,25 @@
           card.onclick = () => {
             gridOverlay.style.display = 'none';
             // 平滑滚动定位到指定的幻灯片
-            const targetSlide = state.slideElements[idx];
+            const targetSlide = state.slideElements[originalIndex];
             if (targetSlide) {
               targetSlide.scrollIntoView({ behavior: 'smooth' });
             }
           };
           gridBody.appendChild(card);
+        });
+      }
+
+      // 绑定过滤标签点击
+      const filterBar = document.getElementById('grid-filter-bar');
+      if (filterBar) {
+        filterBar.querySelectorAll('button').forEach(btn => {
+          btn.onclick = () => {
+            filterBar.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentGridFilter = btn.dataset.gridFilter || 'all';
+            renderGrid();
+          };
         });
       }
 
@@ -1462,9 +2023,53 @@
         gridOverlay.style.display = 'none';
       };
 
-      // 8. 切换博主抽屉逻辑 (Jellyfin 风格结构化片库)
+      // 8. 切换博主抽屉逻辑 (Jellyfin 风格结构化片库 + 顶部置顶收藏夹与合集)
       function renderBloggerDrawerList() {
         bloggerList.innerHTML = '';
+
+        // 1. 顶部置顶专属合集 (我的喜欢 + 自定义合集)
+        const favs = FavoritesManager.getAll();
+        const favItem = document.createElement('div');
+        favItem.className = 'blogger-item' + (state.currentTask?.id === '__fav__' ? ' current' : '');
+        favItem.innerHTML = `
+          <div class="blogger-item-avatar" style="display:flex; align-items:center; justify-content:center; background:rgba(255,36,66,0.2); color:var(--heart); font-size:20px;">
+            ❤️
+          </div>
+          <div class="blogger-item-info">
+            <div class="blogger-item-name" style="color:var(--heart);">❤️ 我的喜欢 (本地专属收藏)</div>
+            <div class="blogger-item-count">🌟 共 ${favs.length} 个收藏条目</div>
+          </div>
+        `;
+        favItem.onclick = () => selectVirtualTask('__fav__', '❤️ 我的喜欢', favs);
+        bloggerList.appendChild(favItem);
+
+        // 自定义合集
+        const colls = CollectionManager.getCollections();
+        Object.keys(colls).forEach(colName => {
+          const colItems = CollectionManager.getItems(colName);
+          const colEl = document.createElement('div');
+          const virtualId = '__col__' + colName;
+          colEl.className = 'blogger-item' + (state.currentTask?.id === virtualId ? ' current' : '');
+          colEl.innerHTML = `
+            <div class="blogger-item-avatar" style="display:flex; align-items:center; justify-content:center; background:rgba(255,212,0,0.18); color:#ffd400; font-size:20px;">
+              ⭐
+            </div>
+            <div class="blogger-item-info">
+              <div class="blogger-item-name">${escapeHtml(colName)} <span style="font-size:11px; color:#ffd400; font-weight:normal;">[合集]</span></div>
+              <div class="blogger-item-count">📁 共 ${colItems.length} 个媒体</div>
+            </div>
+          `;
+          colEl.onclick = () => selectVirtualTask(virtualId, '⭐ ' + colName, colItems);
+          bloggerList.appendChild(colEl);
+        });
+
+        // 分隔标题
+        const sep = document.createElement('div');
+        sep.style.cssText = 'padding: 10px 16px 4px 16px; font-size: 11px; font-weight: 800; color: var(--text-sub); text-transform: uppercase; letter-spacing: 0.5px;';
+        sep.textContent = '📁 本地博主媒体库';
+        bloggerList.appendChild(sep);
+
+        // 2. 博主任务列表
         state.tasks.forEach(t => {
           const item = document.createElement('div');
           item.className = 'blogger-item' + (state.currentTask?.id === t.id ? ' current' : '');
@@ -1524,6 +2129,19 @@
       sheetMask.onclick = (e) => {
         if (e.target === sheetMask) sheetMask.style.display = 'none';
       };
+
+      const btnCloseCol = document.getElementById('btn-close-collection-sheet');
+      if (btnCloseCol) {
+        btnCloseCol.onclick = () => {
+          document.getElementById('collection-sheet-mask').style.display = 'none';
+        };
+      }
+      const colMask = document.getElementById('collection-sheet-mask');
+      if (colMask) {
+        colMask.onclick = (e) => {
+          if (e.target === colMask) colMask.style.display = 'none';
+        };
+      }
 
       // 9. 下载媒体条目
       function downloadMedia(item) {
