@@ -351,16 +351,29 @@ async function handleCreateTask(data) {
     }
 
     // 自动推送该新任务至 Python 局域网远程服务
-    fetch('http://127.0.0.1:8080/api/sync_task', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ task: taskMeta, items: Object.values(itemsMap) })
-    }).catch(() => {});
+    getRemoteServerUrl().then(remoteBase => {
+      fetch(`${remoteBase}/api/sync_task`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task: taskMeta, items: Object.values(itemsMap) })
+      }).catch(() => {});
+    });
 
     return { success: true, taskId, count: taskMeta.media_count };
   } catch (err) {
     return { success: false, error: err.message };
   }
+}
+
+async function getRemoteServerUrl() {
+  const ports = [8899, 8080, 18080, 28080];
+  for (const p of ports) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${p}/api/lan_info`);
+      if (res.ok) return `http://127.0.0.1:${p}`;
+    } catch(e) {}
+  }
+  return 'http://127.0.0.1:8899';
 }
 
 async function handleGetTaskList() {
@@ -421,6 +434,7 @@ async function handleDeleteTask(taskId) {
 
 async function handleSyncAllToRemote() {
   try {
+    const remoteBase = await getRemoteServerUrl();
     const res = await chrome.storage.local.get([STORAGE_KEYS.TASKS_INDEX]);
     const index = res[STORAGE_KEYS.TASKS_INDEX] || [];
     let syncedCount = 0;
@@ -434,7 +448,7 @@ async function handleSyncAllToRemote() {
       const items = Object.values(itemsMap);
 
       if (task) {
-        await fetch('http://127.0.0.1:8080/api/sync_task', {
+        await fetch(`${remoteBase}/api/sync_task`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ task, items })

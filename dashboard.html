@@ -267,22 +267,56 @@
     </section>
   </main>
 
-  <!-- 沉浸式 Lightbox 播放器 -->
-  <div id="xmd-lightbox">
-    <button class="xmd-lightbox-close" id="lightbox-close-btn">✕</button>
-    <div class="xmd-lightbox-content">
-      <div id="lightbox-media-box"></div>
+  <!-- 沉浸式相册级全屏画廊 Lightbox (支持手势左右滑动、上下滑退出、计数器) -->
+  <div id="xmd-lightbox" class="xmd-gallery-modal">
+    <!-- 顶部状态工具栏 -->
+    <div class="xmd-gallery-header">
+      <div class="xmd-gallery-info">
+        <span class="xmd-gallery-counter" id="lightbox-counter">1 / 1</span>
+        <span class="xmd-gallery-tag" id="lightbox-type-badge">MP4</span>
+      </div>
+      <div class="xmd-gallery-actions">
+        <button class="xmd-gallery-btn-icon" id="lightbox-close-btn" title="关闭 (Esc)">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- 左右翻页按钮 (PC端明显悬浮，手机端触控优化) -->
+    <button class="xmd-gallery-arrow xmd-gallery-prev" id="lightbox-prev-btn" title="上一张 (←)">
+      <svg viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="15 18 9 12 15 6"></polyline>
+      </svg>
+    </button>
+    <button class="xmd-gallery-arrow xmd-gallery-next" id="lightbox-next-btn" title="下一张 (→)">
+      <svg viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="9 18 15 12 9 6"></polyline>
+      </svg>
+    </button>
+
+    <!-- 核心手势拖拽滑动区域 -->
+    <div class="xmd-gallery-stage" id="lightbox-stage">
+      <div class="xmd-gallery-track" id="lightbox-track">
+        <div id="lightbox-media-box" class="xmd-gallery-media-box"></div>
+      </div>
+    </div>
+
+    <!-- 底部操作与推文信息栏 -->
+    <div class="xmd-gallery-footer">
       <div id="lightbox-tweet-info" class="lightbox-tweet-info" style="display:none;">
         <div id="lightbox-tweet-text" class="lightbox-tweet-text"></div>
       </div>
-      <div class="xmd-lightbox-bar">
-        <a id="lightbox-view-tweet-btn" href="#" target="_blank" class="xmd-lightbox-btn xmd-lightbox-btn-secondary" style="display:none;">
+      <div class="xmd-gallery-bar">
+        <a id="lightbox-view-tweet-btn" href="#" target="_blank" class="xmd-gallery-btn xmd-gallery-btn-secondary" style="display:none;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
             <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
           </svg>
           在 X 查看原推文 ↗
         </a>
-        <button class="xmd-lightbox-btn" id="lightbox-dl-btn">
+        <button class="xmd-gallery-btn xmd-gallery-btn-primary" id="lightbox-dl-btn">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
           下载此文件
         </button>

@@ -361,7 +361,7 @@
     }
   }
 
-  function createMediaCardElement(it) {
+  function createMediaCardElement(it, list, index) {
     const itemEl = document.createElement('div');
     itemEl.className = 'gallery-item' + (state.selectedIds.has(it.id) ? ' selected' : '');
     itemEl.setAttribute('data-id', it.id);
@@ -418,9 +418,13 @@
       });
     }
 
-    // 点击打开 Lightbox 播放/查看
+    // 点击打开相册级全屏 Lightbox 播放/查看
     itemEl.onclick = () => {
-      openLightbox(it);
+      if (list && typeof index === 'number') {
+        openLightbox(list, index);
+      } else {
+        openLightbox(it);
+      }
     };
 
     return itemEl;
@@ -437,8 +441,8 @@
       return;
     }
 
-    filtered.forEach(it => {
-      grid.appendChild(createMediaCardElement(it));
+    filtered.forEach((it, idx) => {
+      grid.appendChild(createMediaCardElement(it, filtered, idx));
     });
   }
 
@@ -503,7 +507,8 @@
 
       const mediaGrid = card.querySelector('.dashboard-tweet-media-grid');
       items.forEach(it => {
-        mediaGrid.appendChild(createMediaCardElement(it));
+        const fullIdx = filtered.findIndex(x => x.id === it.id);
+        mediaGrid.appendChild(createMediaCardElement(it, filtered, fullIdx !== -1 ? fullIdx : 0));
       });
 
       const groupDlBtn = card.querySelector('.btn-download-group');
@@ -752,83 +757,398 @@
   }
 
   // =========================================================================
-  // 3. Lightbox 播放器
+  // 3. 沉浸式相册级全屏 Lightbox 播放器 (支持左右滑动、全屏切换、手势与键盘交互)
   // =========================================================================
+  const lightboxState = {
+    items: [],
+    currentIndex: 0,
+    isSliding: false
+  };
+
   function bindLightboxEvents() {
-    document.getElementById('lightbox-close-btn').onclick = closeLightbox;
-    document.getElementById('xmd-lightbox').onclick = (e) => {
-      if (e.target.id === 'xmd-lightbox') closeLightbox();
-    };
+    const box = document.getElementById('xmd-lightbox');
+    const closeBtn = document.getElementById('lightbox-close-btn');
+    const prevBtn = document.getElementById('lightbox-prev-btn');
+    const nextBtn = document.getElementById('lightbox-next-btn');
+    const track = document.getElementById('lightbox-track');
+    const stage = document.getElementById('lightbox-stage');
+
+    if (closeBtn) closeBtn.onclick = closeLightbox;
+    if (prevBtn) prevBtn.onclick = (e) => { e.stopPropagation(); slideTransition('prev'); };
+    if (nextBtn) nextBtn.onclick = (e) => { e.stopPropagation(); slideTransition('next'); };
+
+    // 点击背景空白处关闭
+    if (stage) {
+      stage.onclick = (e) => {
+        if (e.target === stage || e.target === track || e.target.id === 'lightbox-media-box') {
+          closeLightbox();
+        }
+      };
+    }
+
+    // 键盘支持 (左右箭头、A/D、Esc、空格播放/暂停)
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') closeLightbox();
+      if (!box || !box.classList.contains('xmd-active')) return;
+      if (e.key === 'Escape') {
+        closeLightbox();
+      } else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+        slideTransition('prev');
+      } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+        slideTransition('next');
+      } else if (e.key === ' ' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+        const vid = box.querySelector('video');
+        if (vid) {
+          e.preventDefault();
+          if (vid.paused) vid.play();
+          else vid.pause();
+        }
+      }
     });
+
+    // 移动端全屏相册级滑动手势系统 (左右滑动切换视频/照片，下拉阻尼退出)
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let deltaX = 0;
+    let deltaY = 0;
+    let startTime = 0;
+    let isSwiping = false;
+    let gestureDirection = null; // 'h' | 'v' | null
+
+    const onTouchStart = (e) => {
+      if (!box || !box.classList.contains('xmd-active')) return;
+      if (lightboxState.isSliding) return;
+      // 避免点按按钮、链接或文本框时意外拦截
+      if (e.target.closest('button, a, .lightbox-tweet-info, input, textarea')) return;
+
+      const t = e.touches[0];
+      touchStartX = t.clientX;
+      touchStartY = t.clientY;
+      deltaX = 0;
+      deltaY = 0;
+      startTime = Date.now();
+      isSwiping = true;
+      gestureDirection = null;
+
+      if (track) {
+        track.style.transition = 'none';
+      }
+    };
+
+    const onTouchMove = (e) => {
+      if (!isSwiping) return;
+      const t = e.touches[0];
+      const dx = t.clientX - touchStartX;
+      const dy = t.clientY - touchStartY;
+
+      if (!gestureDirection) {
+        if (Math.abs(dx) > 10 && Math.abs(dx) >= Math.abs(dy)) {
+          gestureDirection = 'h';
+        } else if (dy > 12 && dy > Math.abs(dx)) {
+          gestureDirection = 'v';
+        } else if (Math.abs(dy) > 12) {
+          gestureDirection = 'other';
+        }
+      }
+
+      if (gestureDirection === 'h') {
+        // 水平滑动实时跟随手指 (左右滑动切换相册媒体)
+        if (e.cancelable) e.preventDefault();
+        deltaX = dx;
+        if (track) {
+          track.style.transform = `translateX(${dx}px)`;
+        }
+      } else if (gestureDirection === 'v') {
+        // 下拉退出手势 (阻尼缩放与背景透明度渐变)
+        if (e.cancelable) e.preventDefault();
+        deltaY = dy;
+        const scale = Math.max(0.72, 1 - dy / 900);
+        if (track) {
+          track.style.transform = `translate(${dx * 0.3}px, ${dy}px) scale(${scale})`;
+        }
+        if (box) {
+          const alpha = Math.max(0.2, 1 - dy / 450);
+          box.style.backgroundColor = `rgba(0, 0, 0, ${alpha})`;
+        }
+      }
+    };
+
+    const onTouchEnd = () => {
+      if (!isSwiping) return;
+      isSwiping = false;
+      const elapsed = Date.now() - startTime;
+      const vx = Math.abs(deltaX) / (elapsed || 1);
+
+      if (gestureDirection === 'h') {
+        const threshold = 40;
+        if (deltaX < -threshold || (deltaX < -20 && vx > 0.3)) {
+          slideTransition('next');
+        } else if (deltaX > threshold || (deltaX > 20 && vx > 0.3)) {
+          slideTransition('prev');
+        } else {
+          // 弹性回弹复位
+          if (track) {
+            track.style.transition = 'transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1)';
+            track.style.transform = 'translateX(0)';
+          }
+        }
+      } else if (gestureDirection === 'v') {
+        if (deltaY > 80) {
+          closeLightbox();
+        } else {
+          // 下拉未达阈值，弹性复位
+          if (track) {
+            track.style.transition = 'transform 0.22s ease';
+            track.style.transform = 'translate(0, 0) scale(1)';
+          }
+          if (box) box.style.backgroundColor = '';
+        }
+      }
+
+      gestureDirection = null;
+    };
+
+    box.addEventListener('touchstart', onTouchStart, { passive: true });
+    box.addEventListener('touchmove', onTouchMove, { passive: false });
+    box.addEventListener('touchend', onTouchEnd, { passive: true });
+    box.addEventListener('touchcancel', onTouchEnd, { passive: true });
   }
 
-  function openLightbox(item) {
+  function slideTransition(direction) {
+    if (lightboxState.isSliding) return;
+    if (!lightboxState.items || lightboxState.items.length <= 1) {
+      const track = document.getElementById('lightbox-track');
+      if (track) {
+        track.style.transition = 'transform 0.15s ease';
+        track.style.transform = direction === 'next' ? 'translateX(-20px)' : 'translateX(20px)';
+        setTimeout(() => { track.style.transform = 'translateX(0)'; }, 150);
+      }
+      return;
+    }
+
+    const track = document.getElementById('lightbox-track');
+    lightboxState.isSliding = true;
+
+    if (!track) {
+      if (direction === 'next') showNextMedia();
+      else showPrevMedia();
+      lightboxState.isSliding = false;
+      return;
+    }
+
+    // 1. 快速滑出当前视图
+    const outX = direction === 'next' ? '-100vw' : '100vw';
+    const inX = direction === 'next' ? '60px' : '-60px';
+    track.style.transition = 'transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1)';
+    track.style.transform = `translateX(${outX})`;
+
+    setTimeout(() => {
+      // 2. 渲染新媒体 (清理前置视频并挂载新视频)
+      if (direction === 'next') showNextMedia();
+      else showPrevMedia();
+
+      // 3. 将新内容置于微偏移位置并弹性滑入
+      track.style.transition = 'none';
+      track.style.transform = `translateX(${inX})`;
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          track.style.transition = 'transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1)';
+          track.style.transform = 'translateX(0)';
+          setTimeout(() => {
+            lightboxState.isSliding = false;
+          }, 240);
+        });
+      });
+    }, 160);
+  }
+
+  function showNextMedia() {
+    if (!lightboxState.items || lightboxState.items.length === 0) return;
+    const nextIdx = (lightboxState.currentIndex + 1) % lightboxState.items.length;
+    renderLightboxMedia(nextIdx);
+  }
+
+  function showPrevMedia() {
+    if (!lightboxState.items || lightboxState.items.length === 0) return;
+    const prevIdx = (lightboxState.currentIndex - 1 + lightboxState.items.length) % lightboxState.items.length;
+    renderLightboxMedia(prevIdx);
+  }
+
+  function openLightbox(itemOrList, initialIndex = 0) {
+    let list = [];
+    let idx = 0;
+    if (Array.isArray(itemOrList)) {
+      list = itemOrList;
+      idx = typeof initialIndex === 'number' ? initialIndex : 0;
+    } else if (itemOrList && typeof itemOrList === 'object') {
+      const filtered = getFilteredItems();
+      const foundIdx = filtered.findIndex(x => x.id === itemOrList.id);
+      if (foundIdx !== -1) {
+        list = filtered;
+        idx = foundIdx;
+      } else {
+        list = [itemOrList];
+        idx = 0;
+      }
+    }
+
+    if (list.length === 0) return;
+
+    lightboxState.items = list;
+    lightboxState.currentIndex = idx;
+    lightboxState.isSliding = false;
+
     const box = document.getElementById('xmd-lightbox');
+    const track = document.getElementById('lightbox-track');
+    if (track) {
+      track.style.transition = 'none';
+      track.style.transform = 'translate(0, 0) scale(1)';
+    }
+    if (box) {
+      box.style.backgroundColor = '';
+      box.classList.add('xmd-active');
+    }
+
+    renderLightboxMedia(idx);
+  }
+
+  function renderLightboxMedia(index) {
+    if (!lightboxState.items || lightboxState.items.length === 0) return;
+
+    const total = lightboxState.items.length;
+    if (index < 0) index = total - 1;
+    if (index >= total) index = 0;
+    lightboxState.currentIndex = index;
+
+    const item = lightboxState.items[index];
     const container = document.getElementById('lightbox-media-box');
+    const counterEl = document.getElementById('lightbox-counter');
+    const badgeEl = document.getElementById('lightbox-type-badge');
     const dlBtn = document.getElementById('lightbox-dl-btn');
     const tweetInfo = document.getElementById('lightbox-tweet-info');
     const tweetTextEl = document.getElementById('lightbox-tweet-text');
     const tweetBtn = document.getElementById('lightbox-view-tweet-btn');
+    const prevBtn = document.getElementById('lightbox-prev-btn');
+    const nextBtn = document.getElementById('lightbox-next-btn');
 
-    container.innerHTML = '';
+    // 1. 彻底暂停并重置上一个视频，杜绝后台声音泄漏
+    if (container) {
+      const oldVid = container.querySelector('video');
+      if (oldVid) {
+        try {
+          oldVid.pause();
+          oldVid.removeAttribute('src');
+          oldVid.load();
+        } catch(e) {}
+      }
+      container.innerHTML = '';
+    }
 
+    // 2. 更新张数计数器与媒体格式标签
+    if (counterEl) counterEl.textContent = `${index + 1} / ${total}`;
+    if (badgeEl) {
+      badgeEl.textContent = item.mediaType === 'video' ? 'MP4' : 'JPG';
+      badgeEl.style.background = item.mediaType === 'video' ? 'var(--accent)' : 'var(--success)';
+    }
+
+    // 如果只有1张媒体，隐藏翻页按钮
+    if (prevBtn && nextBtn) {
+      const showArrows = total > 1;
+      prevBtn.style.display = showArrows ? 'flex' : 'none';
+      nextBtn.style.display = showArrows ? 'flex' : 'none';
+    }
+
+    // 3. 创建并渲染媒体元素
     if (item.mediaType === 'video') {
       const vid = document.createElement('video');
-      vid.className = 'xmd-lightbox-media';
+      vid.className = 'xmd-gallery-media';
       vid.src = item.mediaUrl;
-      vid.controls = true; vid.autoplay = true; vid.loop = true; vid.playsInline = true;
+      vid.controls = true;
+      vid.autoplay = true;
+      vid.playsInline = true;
+      vid.setAttribute('webkit-playsinline', 'true');
+      vid.preload = 'auto';
+      const playPromise = vid.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(() => {});
+      }
       container.appendChild(vid);
     } else {
       const img = document.createElement('img');
-      img.className = 'xmd-lightbox-media';
+      img.className = 'xmd-gallery-media';
       img.src = item.mediaUrl;
+      img.alt = item.tweetText || 'Media';
+      img.onerror = () => {
+        if (item.thumbUrl && img.src !== item.thumbUrl) {
+          img.src = item.thumbUrl;
+        }
+      };
       container.appendChild(img);
     }
 
-    // 原推文文本
-    if (item.tweetText && item.tweetText.trim()) {
-      tweetTextEl.textContent = item.tweetText;
-      tweetInfo.style.display = 'block';
-    } else {
-      tweetInfo.style.display = 'none';
+    // 4. 原推文文字信息展示
+    if (tweetInfo && tweetTextEl) {
+      if (item.tweetText && item.tweetText.trim()) {
+        tweetTextEl.textContent = item.tweetText;
+        tweetInfo.style.display = 'block';
+      } else {
+        tweetInfo.style.display = 'none';
+      }
     }
 
-    // 原推文直接跳转链接
-    if (item.tweetId) {
-      tweetBtn.href = `https://x.com/i/status/${item.tweetId}`;
-      tweetBtn.style.display = 'inline-flex';
-    } else {
-      tweetBtn.style.display = 'none';
+    // 5. 跳转原推文按钮
+    if (tweetBtn) {
+      if (item.tweetId && item.tweetId !== 'unknown') {
+        tweetBtn.href = `https://x.com/i/status/${item.tweetId}`;
+        tweetBtn.style.display = 'inline-flex';
+      } else {
+        tweetBtn.style.display = 'none';
+      }
     }
 
-    dlBtn.onclick = () => {
-      const a = document.createElement('a');
-      a.href = item.mediaUrl;
-      a.download = `${item.tweetId || 'media'}.${item.mediaType === 'video' ? 'mp4' : 'jpg'}`;
-      a.target = '_blank';
-      a.click();
-    };
-
-    box.classList.add('xmd-active');
+    // 6. 下载当前文件
+    if (dlBtn) {
+      dlBtn.onclick = (e) => {
+        e.stopPropagation();
+        const a = document.createElement('a');
+        a.href = item.mediaUrl;
+        const ext = item.mediaType === 'video' ? 'mp4' : 'jpg';
+        a.download = `${state.currentTask?.x_screen_name || 'X'}_${item.tweetId || 'media'}_${(item.id || '').slice(-4)}.${ext}`;
+        a.target = '_blank';
+        a.click();
+      };
+    }
   }
 
   function closeLightbox() {
     const box = document.getElementById('xmd-lightbox');
     const container = document.getElementById('lightbox-media-box');
+    const track = document.getElementById('lightbox-track');
     const tweetInfo = document.getElementById('lightbox-tweet-info');
     if (box) {
       box.classList.remove('xmd-active');
-      if (container) {
-        const v = container.querySelector('video');
-        if (v) v.pause();
-        container.innerHTML = '';
-      }
-      if (tweetInfo) {
-        tweetInfo.style.display = 'none';
-      }
+      box.style.backgroundColor = '';
     }
+    if (track) {
+      track.style.transition = 'none';
+      track.style.transform = 'translate(0, 0) scale(1)';
+    }
+    if (container) {
+      const v = container.querySelector('video');
+      if (v) {
+        try {
+          v.pause();
+          v.removeAttribute('src');
+          v.load();
+        } catch(e) {}
+      }
+      container.innerHTML = '';
+    }
+    if (tweetInfo) {
+      tweetInfo.style.display = 'none';
+    }
+    lightboxState.items = [];
+    lightboxState.isSliding = false;
   }
 
   // =========================================================================
@@ -878,35 +1198,31 @@
   // =========================================================================
   function bindRemoteHubEvents() {
     // 自动探测本地运行的 Python 远程服务器局域网 IP
-    try {
-      fetch('http://127.0.0.1:8080/api/lan_info')
-        .then(r => r.json())
-        .then(info => {
-          if (info && info.ip) {
-            const input = document.getElementById('remote-ip-input');
-            if (input) input.value = info.ip;
-            const targetUrl = `http://${info.ip}:${info.port || 8080}/dashboard.html`;
-            const resBox = document.getElementById('remote-url-result');
-            const linkEl = document.getElementById('remote-url-link');
-            if (linkEl && resBox) {
-              linkEl.href = targetUrl;
-              linkEl.textContent = targetUrl;
-              resBox.style.display = 'block';
-            }
-          }
-        })
-        .catch(() => {});
-    } catch (e) {}
+    detectRemoteServer().then(info => {
+      if (info && info.ip) {
+        const input = document.getElementById('remote-ip-input');
+        if (input) input.value = info.ip;
+        const targetUrl = `http://${info.ip}:${info.port || 8899}/dashboard.html`;
+        const resBox = document.getElementById('remote-url-result');
+        const linkEl = document.getElementById('remote-url-link');
+        if (linkEl && resBox) {
+          linkEl.href = targetUrl;
+          linkEl.textContent = targetUrl;
+          resBox.style.display = 'block';
+        }
+      }
+    });
 
     const genBtn = document.getElementById('btn-generate-remote-url');
     if (genBtn) {
-      genBtn.onclick = () => {
+      genBtn.onclick = async () => {
         const ip = (document.getElementById('remote-ip-input')?.value || '').trim();
         if (!ip) {
           alert('请先输入电脑在局域网中的 IP 地址（运行 start_remote_server.bat 即可查看）');
           return;
         }
-        const port = 8080;
+        const srv = await detectRemoteServer();
+        const port = srv ? (srv.port || 8899) : 8899;
         const targetUrl = `http://${ip}:${port}/dashboard.html`;
         const resBox = document.getElementById('remote-url-result');
         const linkEl = document.getElementById('remote-url-link');
@@ -952,11 +1268,27 @@
     }
   }
 
+  async function detectRemoteServer() {
+    const ports = [8899, 8080, 18080, 28080];
+    for (const p of ports) {
+      try {
+        const res = await fetch(`http://127.0.0.1:${p}/api/lan_info`);
+        if (res.ok) {
+          const data = await res.json();
+          return { baseUrl: `http://127.0.0.1:${p}`, ...data };
+        }
+      } catch(e) {}
+    }
+    return null;
+  }
+
   // --- 静默同步辅助函数 ---
   async function syncSingleTaskToRemote(task, items) {
     if (!isExtensionContext || !task) return;
     try {
-      await fetch('http://127.0.0.1:8080/api/sync_task', {
+      const srv = await detectRemoteServer();
+      const base = srv ? srv.baseUrl : 'http://127.0.0.1:8899';
+      await fetch(`${base}/api/sync_task`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ task, items: items || [] })
@@ -967,7 +1299,9 @@
   async function syncAllTasksToRemote() {
     if (!isExtensionContext || !state.tasks || state.tasks.length === 0) return;
     try {
-      await fetch('http://127.0.0.1:8080/api/sync_all', {
+      const srv = await detectRemoteServer();
+      const base = srv ? srv.baseUrl : 'http://127.0.0.1:8899';
+      await fetch(`${base}/api/sync_all`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tasks: state.tasks })

@@ -410,8 +410,11 @@
     const lightbox = document.createElement('div');
     lightbox.id = 'xmd-lightbox';
     lightbox.innerHTML = `
+      <div style="position:absolute; top:20px; left:24px; font-size:14px; color:#fff; font-weight:700; background:rgba(255,255,255,0.2); padding:4px 12px; border-radius:16px; z-index:10;" id="xmd-lightbox-counter">1 / 1</div>
       <button class="xmd-lightbox-close" id="xmd-lightbox-close">✕</button>
-      <div id="xmd-lightbox-content" style="display:flex; flex-direction:column; align-items:center;">
+      <button id="xmd-lightbox-prev" style="position:absolute; left:20px; top:50%; transform:translateY(-50%); background:rgba(0,0,0,0.6); border:1px solid rgba(255,255,255,0.2); color:#fff; width:44px; height:44px; border-radius:50%; font-size:24px; cursor:pointer; display:flex; align-items:center; justify-content:center; z-index:10;">‹</button>
+      <button id="xmd-lightbox-next" style="position:absolute; right:20px; top:50%; transform:translateY(-50%); background:rgba(0,0,0,0.6); border:1px solid rgba(255,255,255,0.2); color:#fff; width:44px; height:44px; border-radius:50%; font-size:24px; cursor:pointer; display:flex; align-items:center; justify-content:center; z-index:10;">›</button>
+      <div id="xmd-lightbox-content" style="display:flex; flex-direction:column; align-items:center; max-width:92vw;">
         <div id="xmd-lightbox-media-container"></div>
         <div id="xmd-lightbox-tweet-info" style="display:none; margin-top:12px; max-width:800px; font-size:13px; color:#e7e9ea; text-align:center; background:rgba(0,0,0,0.6); padding:8px 16px; border-radius:6px; line-height:1.4;"></div>
         <div style="display:flex; gap:12px; margin-top:12px; align-items:center;">
@@ -428,7 +431,16 @@
     makeDraggable(trigger, () => panel.classList.toggle('xmd-hidden'));
     document.getElementById('xmd-btn-close').onclick = () => panel.classList.add('xmd-hidden');
     document.getElementById('xmd-lightbox-close').onclick = closeLightbox;
+    document.getElementById('xmd-lightbox-prev').onclick = (e) => { e.stopPropagation(); navigateUserscriptLightbox(-1); };
+    document.getElementById('xmd-lightbox-next').onclick = (e) => { e.stopPropagation(); navigateUserscriptLightbox(1); };
     lightbox.onclick = (e) => { if (e.target === lightbox) closeLightbox(); };
+
+    document.addEventListener('keydown', (e) => {
+      if (!lightbox.classList.contains('xmd-active')) return;
+      if (e.key === 'Escape') closeLightbox();
+      else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') navigateUserscriptLightbox(-1);
+      else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') navigateUserscriptLightbox(1);
+    });
 
     document.getElementById('xmd-btn-chunk-step').onclick = stepSingleChunk;
     document.getElementById('xmd-btn-start').onclick = startChunkingLoop;
@@ -497,14 +509,79 @@
     el.addEventListener('touchstart', onDown, { passive: false });
   }
 
-  function openLightbox(item) {
+  let userscriptLightboxItems = [];
+  let userscriptLightboxIndex = 0;
+
+  function navigateUserscriptLightbox(delta) {
+    if (!userscriptLightboxItems || userscriptLightboxItems.length <= 1) return;
+    let nextIdx = (userscriptLightboxIndex + delta) % userscriptLightboxItems.length;
+    if (nextIdx < 0) nextIdx += userscriptLightboxItems.length;
+    renderUserscriptLightboxItem(nextIdx);
+  }
+
+  function openLightbox(itemOrList, initialIndex = 0) {
+    let list = [];
+    let idx = 0;
+    if (Array.isArray(itemOrList)) {
+      list = itemOrList;
+      idx = typeof initialIndex === 'number' ? initialIndex : 0;
+    } else if (itemOrList && typeof itemOrList === 'object') {
+      const all = getFilteredItems();
+      const found = all.findIndex(x => x.mediaUrl === itemOrList.mediaUrl);
+      if (found !== -1) {
+        list = all;
+        idx = found;
+      } else {
+        list = [itemOrList];
+        idx = 0;
+      }
+    }
+    if (list.length === 0) return;
+
+    userscriptLightboxItems = list;
+    userscriptLightboxIndex = idx;
+
+    const box = document.getElementById('xmd-lightbox');
+    if (box) box.classList.add('xmd-active');
+
+    renderUserscriptLightboxItem(idx);
+  }
+
+  function renderUserscriptLightboxItem(index) {
+    const list = userscriptLightboxItems;
+    if (!list || list.length === 0) return;
+    if (index < 0) index = list.length - 1;
+    if (index >= list.length) index = 0;
+    userscriptLightboxIndex = index;
+    const item = list[index];
+
     const box = document.getElementById('xmd-lightbox');
     const container = document.getElementById('xmd-lightbox-media-container');
     const dlBtn = document.getElementById('xmd-lightbox-dl-btn');
     const tweetInfo = document.getElementById('xmd-lightbox-tweet-info');
     const tweetBtn = document.getElementById('xmd-lightbox-view-tweet');
+    const counterEl = document.getElementById('xmd-lightbox-counter');
+    const prevBtn = document.getElementById('xmd-lightbox-prev');
+    const nextBtn = document.getElementById('xmd-lightbox-next');
+
     if (!box || !container) return;
+
+    const oldVid = container.querySelector('video');
+    if (oldVid) {
+      try {
+        oldVid.pause();
+        oldVid.removeAttribute('src');
+        oldVid.load();
+      } catch(e) {}
+    }
     container.innerHTML = '';
+
+    if (counterEl) counterEl.textContent = `${index + 1} / ${list.length}`;
+    if (prevBtn && nextBtn) {
+      const showArrows = list.length > 1;
+      prevBtn.style.display = showArrows ? 'flex' : 'none';
+      nextBtn.style.display = showArrows ? 'flex' : 'none';
+    }
 
     if (item.mediaType === 'video') {
       const vid = document.createElement('video');
@@ -538,7 +615,6 @@
     }
 
     dlBtn.onclick = () => downloadSingleMedia(item);
-    box.classList.add('xmd-active');
   }
 
   function closeLightbox() {
@@ -549,13 +625,20 @@
       box.classList.remove('xmd-active');
       if (container) {
         const vid = container.querySelector('video');
-        if (vid) vid.pause();
+        if (vid) {
+          try {
+            vid.pause();
+            vid.removeAttribute('src');
+            vid.load();
+          } catch(e) {}
+        }
         container.innerHTML = '';
       }
       if (tweetInfo) {
         tweetInfo.style.display = 'none';
       }
     }
+    userscriptLightboxItems = [];
   }
 
   function downloadSingleMedia(item) {
