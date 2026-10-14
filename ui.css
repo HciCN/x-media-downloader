@@ -71,7 +71,7 @@
   position: fixed;
   bottom: 95px;
   right: 28px;
-  width: 440px;
+  width: 450px;
   max-width: calc(100vw - 40px);
   max-height: 85vh;
   background: rgba(22, 24, 28, 0.95);
@@ -98,7 +98,7 @@
 
 /* 面板头部 */
 .xmd-header {
-  padding: 16px 18px;
+  padding: 14px 18px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -331,8 +331,8 @@
 .xmd-btn-primary { background: var(--xmd-accent); color: #fff; }
 .xmd-btn-primary:hover:not(:disabled) { background: var(--xmd-accent-hover); }
 
-.xmd-btn-success { background: var(--xmd-success); color: #fff; }
-.xmd-btn-success:hover:not(:disabled) { filter: brightness(1.1); }
+.xmd-btn-success { background: var(--success); color: #fff; }
+.xmd-btn-success:hover:not(:disabled) { filter: brightness(1.15); }
 
 .xmd-btn-secondary { background: var(--xmd-bg-tertiary); color: var(--xmd-text-main); border: 1px solid var(--xmd-border); }
 .xmd-btn-secondary:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); }
@@ -347,6 +347,39 @@
   gap: 8px;
 }
 
+/* 媒体选择操作工具栏 */
+.xmd-selection-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--xmd-bg-tertiary);
+  padding: 6px 10px;
+  border-radius: var(--xmd-radius-sm);
+  border: 1px solid var(--xmd-border);
+  font-size: 12px;
+}
+
+.xmd-mini-btn-group {
+  display: flex;
+  gap: 4px;
+}
+
+.xmd-mini-btn {
+  background: transparent;
+  border: 1px solid var(--xmd-border);
+  color: var(--xmd-text-muted);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.xmd-mini-btn:hover {
+  color: var(--xmd-text-main);
+  background: rgba(255, 255, 255, 0.08);
+}
+
 /* 媒体缩略图预览列表 */
 .xmd-gallery-wrap {
   display: flex;
@@ -358,7 +391,7 @@
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 6px;
-  max-height: 180px;
+  max-height: 200px;
   overflow-y: auto;
   padding-right: 4px;
 }
@@ -371,7 +404,23 @@
   overflow: hidden;
   background: var(--xmd-bg-tertiary);
   cursor: pointer;
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 2px solid transparent;
+  transition: all 0.15s;
+}
+
+.xmd-thumb-item.selected {
+  border-color: var(--xmd-accent);
+}
+
+.xmd-thumb-checkbox {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--xmd-accent);
+  z-index: 2;
+  cursor: pointer;
 }
 
 .xmd-thumb-img {
@@ -397,9 +446,7 @@
   border-radius: 3px;
 }
 
-/* ============================================================
-   新特性 1: 内置视频与大图预览 Lightbox 播放器
-   ============================================================ */
+/* Lightbox 播放器 */
 #xmd-lightbox {
   position: fixed;
   top: 0;
@@ -489,9 +536,7 @@
   background: rgba(255, 255, 255, 0.3);
 }
 
-/* ============================================================
-   新特性 2: 信息流推文操作栏下载图标与悬浮菜单
-   ============================================================ */
+/* 推文操作栏图标与弹窗 */
 .xmd-tweet-action-wrap {
   display: inline-flex;
   align-items: center;
@@ -528,7 +573,6 @@
   color: var(--xmd-success) !important;
 }
 
-/* 多图/视频弹出浮动菜单 */
 .xmd-popover-menu {
   position: absolute;
   bottom: calc(100% + 8px);

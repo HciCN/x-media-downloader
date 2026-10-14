@@ -1,7 +1,7 @@
 /**
  * X-Media-Downloader - Content Script
  * 负责注入主世界 Hook、构建并管理悬浮控制面板、可拖拽悬浮球、内置视频播放器、
- * 信息流推文一键下载按钮注入、调度抓取引擎、ZIP打包及多格式导出
+ * 信息流推文一键下载按钮注入、媒体多选精准打包、与总控制台 (Dashboard) 联动
  */
 
 (function () {
@@ -32,6 +32,7 @@
     },
     capturedItems: new Map(), // key: url -> item
     tweetItemsMap: new Map(), // tweetId -> [items]
+    selectedIds: new Set(),   // 已勾选的媒体 URL 集合
     queryConfig: null,
     headers: {},
     nextCursor: null,
@@ -45,7 +46,6 @@
     requestIdSeed: 0
   };
 
-  // 防风控阶梯自适应随机延时
   function getAdaptiveDelay(page) {
     if (page < 5) return 800 + Math.random() * 800;
     if (page < 10) return 1500 + Math.random() * 1000;
@@ -81,15 +81,12 @@
       <div id="xmd-float-badge">0</div>
     `;
 
-    // 恢复历史拖拽保存的位置
     const savedPos = localStorage.getItem('xmd_trigger_pos');
     if (savedPos) {
       try {
         const { left, top } = JSON.parse(savedPos);
-        const maxLeft = window.innerWidth - 64;
-        const maxTop = window.innerHeight - 64;
-        trigger.style.left = `${Math.max(10, Math.min(maxLeft, left))}px`;
-        trigger.style.top = `${Math.max(10, Math.min(maxTop, top))}px`;
+        trigger.style.left = `${Math.max(10, Math.min(window.innerWidth - 64, left))}px`;
+        trigger.style.top = `${Math.max(10, Math.min(window.innerHeight - 64, top))}px`;
         trigger.style.right = 'auto';
         trigger.style.bottom = 'auto';
       } catch (e) {}
@@ -109,6 +106,9 @@
           </div>
         </div>
         <div class="xmd-header-actions">
+          <button id="xmd-btn-open-dashboard" class="btn btn-secondary" style="padding:4px 10px; font-size:11px;" title="进入独立大屏 Web 总控制台">
+            总控台 ↗
+          </button>
           <button id="xmd-btn-close" class="xmd-btn-icon" title="关闭面板">
             <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round">
               <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -184,24 +184,35 @@
         <div class="xmd-section-title">下载与导出</div>
         <div class="xmd-export-grid">
           <button id="xmd-btn-zip" class="xmd-btn xmd-btn-success" disabled>
-            一键打包 ZIP
+            打包所选为 ZIP
           </button>
           <button id="xmd-btn-native-dl" class="xmd-btn xmd-btn-secondary" disabled>
-            原生并发下载
+            下载所选 (原生)
           </button>
           <button id="xmd-btn-export-txt" class="xmd-btn xmd-btn-secondary" disabled>
-            导出直链 (TXT)
+            复制所选直链 (TXT)
           </button>
-          <button id="xmd-btn-export-json" class="xmd-btn xmd-btn-secondary" disabled>
-            导出数据 (JSON)
+          <button id="xmd-btn-archive-task" class="xmd-btn xmd-btn-secondary" disabled>
+            归档至总控台 ↗
           </button>
         </div>
 
+        <!-- 媒体画廊与细粒度勾选工具栏 -->
         <div class="xmd-gallery-wrap">
-          <div class="xmd-section-title" style="display:flex; justify-content:space-between;">
-            <span>媒体预览 (<span id="xmd-gallery-count">0</span>) - 点击在线预览</span>
+          <div class="xmd-section-title" style="display:flex; justify-content:space-between; align-items:center;">
+            <span>媒体预览 (<span id="xmd-gallery-count">0</span>)</span>
             <span style="font-weight:normal; text-transform:none; cursor:pointer; color:var(--xmd-accent);" id="xmd-btn-toggle-gallery">展开/收起</span>
           </div>
+
+          <div class="xmd-selection-toolbar" id="xmd-selection-toolbar" style="display:none;">
+            <div class="xmd-mini-btn-group">
+              <button class="xmd-mini-btn" id="xmd-btn-select-all">全选</button>
+              <button class="xmd-mini-btn" id="xmd-btn-select-none">全不选</button>
+              <button class="xmd-mini-btn" id="xmd-btn-select-invert">反选</button>
+            </div>
+            <span>已选: <strong id="xmd-selected-count" style="color:var(--xmd-accent);">0</strong> 项</span>
+          </div>
+
           <div id="xmd-gallery-grid" class="xmd-gallery-grid" style="display:none;"></div>
         </div>
       </div>
@@ -238,9 +249,35 @@
       panel.classList.add('xmd-hidden');
     };
 
+    document.getElementById('xmd-btn-open-dashboard').onclick = () => {
+      chrome.runtime.sendMessage({ type: 'OPEN_DASHBOARD' });
+    };
+
     document.getElementById('xmd-btn-toggle-gallery').onclick = () => {
       const g = document.getElementById('xmd-gallery-grid');
-      g.style.display = g.style.display === 'none' ? 'grid' : 'none';
+      const tb = document.getElementById('xmd-selection-toolbar');
+      const isHidden = g.style.display === 'none';
+      g.style.display = isHidden ? 'grid' : 'none';
+      tb.style.display = isHidden ? 'flex' : 'none';
+    };
+
+    // 勾选快捷操作
+    document.getElementById('xmd-btn-select-all').onclick = () => {
+      state.capturedItems.forEach(it => state.selectedIds.add(it.mediaUrl));
+      updateSelectionUI();
+    };
+
+    document.getElementById('xmd-btn-select-none').onclick = () => {
+      state.selectedIds.clear();
+      updateSelectionUI();
+    };
+
+    document.getElementById('xmd-btn-select-invert').onclick = () => {
+      state.capturedItems.forEach(it => {
+        if (state.selectedIds.has(it.mediaUrl)) state.selectedIds.delete(it.mediaUrl);
+        else state.selectedIds.add(it.mediaUrl);
+      });
+      updateSelectionUI();
     };
 
     document.getElementById('xmd-lightbox-close').onclick = closeLightbox;
@@ -255,10 +292,10 @@
     document.getElementById('xmd-btn-pause').onclick = togglePause;
     document.getElementById('xmd-btn-reset').onclick = resetData;
 
-    document.getElementById('xmd-btn-zip').onclick = downloadAsZip;
-    document.getElementById('xmd-btn-native-dl').onclick = downloadBatchNative;
-    document.getElementById('xmd-btn-export-txt').onclick = exportTxt;
-    document.getElementById('xmd-btn-export-json').onclick = exportJson;
+    document.getElementById('xmd-btn-zip').onclick = downloadSelectedAsZip;
+    document.getElementById('xmd-btn-native-dl').onclick = downloadSelectedNative;
+    document.getElementById('xmd-btn-export-txt').onclick = exportSelectedTxt;
+    document.getElementById('xmd-btn-archive-task').onclick = archiveTaskToDashboard;
   }
 
   // 悬浮球自由拖拽与点击判定实现
@@ -306,7 +343,6 @@
         let newLeft = initialLeft + dx;
         let newTop = initialTop + dy;
 
-        // 限制在视窗内部
         const maxLeft = window.innerWidth - el.offsetWidth - 10;
         const maxTop = window.innerHeight - el.offsetHeight - 10;
         newLeft = Math.max(10, Math.min(maxLeft, newLeft));
@@ -330,11 +366,9 @@
       document.removeEventListener('touchend', onPointerUp);
 
       if (hasMoved) {
-        // 保存位置到 localStorage
         const rect = el.getBoundingClientRect();
         localStorage.setItem('xmd_trigger_pos', JSON.stringify({ left: rect.left, top: rect.top }));
       } else {
-        // 未拖拽视为点击
         onClickCallback?.();
       }
     }
@@ -343,7 +377,7 @@
     el.addEventListener('touchstart', onPointerDown, { passive: false });
   }
 
-  // 打开 Lightbox 在线预览播放器
+  // Lightbox 播放器控制
   function openLightbox(item) {
     const box = document.getElementById('xmd-lightbox');
     const container = document.getElementById('xmd-lightbox-media-container');
@@ -428,7 +462,6 @@
     const typeFilter = document.getElementById('xmd-opt-type')?.value ?? 'all';
 
     for (const item of items) {
-      // 记录到 tweetItemsMap
       if (item.tweetId) {
         if (!state.tweetItemsMap.has(item.tweetId)) {
           state.tweetItemsMap.set(item.tweetId, []);
@@ -446,6 +479,7 @@
       const key = item.mediaUrl;
       if (!state.capturedItems.has(key)) {
         state.capturedItems.set(key, item);
+        state.selectedIds.add(key); // 新增条目默认勾选
         appendThumbToGallery(item);
       }
     }
@@ -477,10 +511,36 @@
     if (vidEl) vidEl.textContent = vidCount;
     if (gCount) gCount.textContent = total;
 
+    updateSelectionUI();
+
     const hasItems = total > 0;
-    ['xmd-btn-zip', 'xmd-btn-native-dl', 'xmd-btn-export-txt', 'xmd-btn-export-json'].forEach(id => {
+    ['xmd-btn-zip', 'xmd-btn-native-dl', 'xmd-btn-export-txt', 'xmd-btn-archive-task'].forEach(id => {
       const btn = document.getElementById(id);
       if (btn) btn.disabled = !hasItems;
+    });
+  }
+
+  function updateSelectionUI() {
+    const selCount = state.selectedIds.size;
+    const countEl = document.getElementById('xmd-selected-count');
+    if (countEl) countEl.textContent = selCount;
+
+    const zipBtn = document.getElementById('xmd-btn-zip');
+    const dlBtn = document.getElementById('xmd-btn-native-dl');
+    const txtBtn = document.getElementById('xmd-btn-export-txt');
+
+    if (zipBtn) zipBtn.textContent = `打包所选为 ZIP (${selCount})`;
+    if (dlBtn) dlBtn.textContent = `下载所选 (${selCount})`;
+    if (txtBtn) txtBtn.textContent = `复制所选直链 (${selCount})`;
+
+    // 更新各缩略图选中状态
+    document.querySelectorAll('.xmd-thumb-item').forEach(el => {
+      const url = el.getAttribute('data-url');
+      const cb = el.querySelector('.xmd-thumb-checkbox');
+      const isSel = state.selectedIds.has(url);
+      if (cb) cb.checked = isSel;
+      if (isSel) el.classList.add('selected');
+      else el.classList.remove('selected');
     });
   }
 
@@ -489,14 +549,25 @@
     if (!grid) return;
 
     const div = document.createElement('div');
-    div.className = 'xmd-thumb-item';
+    div.className = 'xmd-thumb-item selected';
+    div.setAttribute('data-url', item.mediaUrl);
     div.title = `点击在线预览 (${item.mediaType})\n${item.tweetText || ''}`;
-    div.onclick = () => openLightbox(item);
 
     div.innerHTML = `
+      <input type="checkbox" class="xmd-thumb-checkbox" checked />
       <img class="xmd-thumb-img" src="${item.thumbUrl || item.mediaUrl}" loading="lazy" />
       <span class="xmd-thumb-badge">${item.mediaType === 'video' ? 'MP4' : 'IMG'}</span>
     `;
+
+    const cb = div.querySelector('.xmd-thumb-checkbox');
+    cb.onclick = (e) => {
+      e.stopPropagation();
+      if (cb.checked) state.selectedIds.add(item.mediaUrl);
+      else state.selectedIds.delete(item.mediaUrl);
+      updateSelectionUI();
+    };
+
+    div.onclick = () => openLightbox(item);
     grid.appendChild(div);
   }
 
@@ -610,8 +681,11 @@
     state.isScraping = false;
     startBtn.disabled = false;
     pauseBtn.disabled = true;
-    if (hintEl.textContent.includes('正在')) {
-      hintEl.textContent = `抓取结束，共采集到 ${state.capturedItems.size} 个媒体资源！`;
+
+    // 抓取结束自动归档至本地数据库
+    if (state.capturedItems.size > 0) {
+      archiveTaskToDashboard(false);
+      hintEl.textContent = `抓取完成！共 ${state.capturedItems.size} 个媒体，已归档至总控台！`;
     }
   }
 
@@ -627,6 +701,7 @@
     state.isScraping = false;
     state.isPaused = false;
     state.capturedItems.clear();
+    state.selectedIds.clear();
     state.nextCursor = null;
     state.pageCount = 0;
 
@@ -640,13 +715,34 @@
     updateStatsUI();
   }
 
-  // 6. 单项与批量下载
+  // 6. 归档到总控制台
+  function archiveTaskToDashboard(openAfterArchive = true) {
+    const items = Array.from(state.capturedItems.values());
+    if (items.length === 0) return;
+
+    chrome.runtime.sendMessage({
+      type: 'CREATE_LOCAL_TASK',
+      payload: {
+        task_name: `${state.userProfile.name || detectCurrentHandle()} 的媒体库`,
+        user: state.userProfile,
+        media_items: items
+      }
+    }, (res) => {
+      if (res?.success && openAfterArchive) {
+        chrome.runtime.sendMessage({
+          type: 'OPEN_DASHBOARD',
+          payload: { taskId: res.taskId }
+        });
+      }
+    });
+  }
+
+  // 7. 单项与多选打包下载
   function downloadSingleMedia(item) {
     const handle = item.user?.screen_name || detectCurrentHandle() || 'X_User';
     const ext = item.mediaType === 'video' ? 'mp4' : 'jpg';
     const filename = `${handle}_${item.tweetId || 'media'}_${Date.now()}.${ext}`;
 
-    // 使用 background 原生下载
     chrome.runtime.sendMessage({
       source: 'XMD_CONTENT',
       type: 'START_DOWNLOAD_BATCH',
@@ -657,7 +753,6 @@
       }
     });
 
-    // 备用触发直接 a 标签下载
     const a = document.createElement('a');
     a.href = item.mediaUrl;
     a.download = filename;
@@ -667,9 +762,13 @@
     a.remove();
   }
 
-  async function downloadAsZip() {
-    const items = Array.from(state.capturedItems.values());
-    if (items.length === 0) return;
+  // --- 打包所选媒体为 ZIP ---
+  async function downloadSelectedAsZip() {
+    const selected = Array.from(state.capturedItems.values()).filter(it => state.selectedIds.has(it.mediaUrl));
+    if (selected.length === 0) {
+      alert('请先勾选需要打包的图片或视频！');
+      return;
+    }
 
     if (!window.JSZip) {
       alert('JSZip 依赖库未就绪，请使用原生下载或导出直链。');
@@ -678,21 +777,21 @@
 
     const zip = new window.JSZip();
     const handle = state.userProfile.screen_name || detectCurrentHandle() || 'X_User';
-    const folder = zip.folder(`${handle}_media`);
+    const folder = zip.folder(`${handle}_selected_media`);
     const hintEl = document.getElementById('xmd-status-hint');
     const fillEl = document.getElementById('xmd-progress-fill');
 
     let completed = 0;
-    const total = items.length;
-    hintEl.textContent = `开始打包 ZIP，共 ${total} 个文件...`;
+    const total = selected.length;
+    hintEl.textContent = `开始打包所选 ZIP，共 ${total} 个文件...`;
 
     const concurrency = 3;
     let idx = 0;
 
     async function downloadWorker() {
-      while (idx < items.length) {
+      while (idx < selected.length) {
         const i = idx++;
-        const item = items[i];
+        const item = selected[i];
         const ext = item.mediaType === 'video' ? 'mp4' : 'jpg';
         const filename = `${handle}_${item.tweetId}_${String(i + 1).padStart(3, '0')}.${ext}`;
 
@@ -721,106 +820,66 @@
     const url = URL.createObjectURL(content);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${handle}_x_media_${Date.now()}.zip`;
+    a.download = `${handle}_selected_${Date.now()}.zip`;
     document.body.appendChild(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
 
-    hintEl.textContent = `ZIP 打包下载完成！共 ${completed} 个文件。`;
+    hintEl.textContent = `所选 ZIP 打包完成！共 ${completed} 个文件。`;
   }
 
-  function downloadBatchNative() {
-    const items = Array.from(state.capturedItems.values());
-    if (items.length === 0) return;
+  function downloadSelectedNative() {
+    const selected = Array.from(state.capturedItems.values()).filter(it => state.selectedIds.has(it.mediaUrl));
+    if (selected.length === 0) {
+      alert('请先勾选需要下载的媒体！');
+      return;
+    }
 
     const handle = state.userProfile.screen_name || detectCurrentHandle() || 'X_User';
     const folderName = `X-Media/${handle}`;
     const hintEl = document.getElementById('xmd-status-hint');
 
-    hintEl.textContent = `已推送到扩展下载队列，正在并发下载...`;
+    hintEl.textContent = `已推送到扩展下载队列，正在并发下载 ${selected.length} 个文件...`;
 
     chrome.runtime.sendMessage({
       source: 'XMD_CONTENT',
       type: 'START_DOWNLOAD_BATCH',
       payload: {
-        items,
+        items: selected,
         folderName,
         concurrency: 4
-      }
-    }, (res) => {
-      if (res?.success) {
-        hintEl.textContent = `后台已启动下载任务 (${res.count} 个文件)`;
       }
     });
   }
 
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (msg && msg.source === 'XMD_BG' && msg.type === 'DOWNLOAD_PROGRESS') {
-      const { completed, failed, total, isFinished } = msg.payload;
-      const hintEl = document.getElementById('xmd-status-hint');
-      const fillEl = document.getElementById('xmd-progress-fill');
-      const pct = total > 0 ? Math.round(((completed + failed) / total) * 100) : 0;
-
-      if (fillEl) fillEl.style.width = `${pct}%`;
-      if (hintEl) {
-        hintEl.textContent = isFinished
-          ? `下载完成！成功: ${completed}, 失败: ${failed}`
-          : `正在后台高速下载: ${completed + failed}/${total} (${pct}%)`;
-      }
+  function exportSelectedTxt() {
+    const selected = Array.from(state.capturedItems.values()).filter(it => state.selectedIds.has(it.mediaUrl));
+    if (selected.length === 0) {
+      alert('请先勾选需要导出的媒体！');
+      return;
     }
-  });
 
-  function exportTxt() {
-    const items = Array.from(state.capturedItems.values());
-    if (items.length === 0) return;
-
-    const urls = items.map(it => it.mediaUrl).join('\n');
+    const urls = selected.map(it => it.mediaUrl).join('\n');
     const handle = state.userProfile.screen_name || detectCurrentHandle() || 'X_User';
 
     navigator.clipboard.writeText(urls).then(() => {
       const hintEl = document.getElementById('xmd-status-hint');
-      if (hintEl) hintEl.textContent = '所有媒体直链已复制到剪贴板！';
+      if (hintEl) hintEl.textContent = `已将选中的 ${selected.length} 个直链复制到剪贴板！`;
     }).catch(() => {});
 
     const blob = new Blob([urls], { type: 'text/plain;charset=utf-8' });
     const u = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = u;
-    a.download = `${handle}_urls_${Date.now()}.txt`;
+    a.download = `${handle}_selected_urls_${Date.now()}.txt`;
     a.click();
     URL.revokeObjectURL(u);
   }
 
-  function exportJson() {
-    const items = Array.from(state.capturedItems.values());
-    if (items.length === 0) return;
-
-    const handle = state.userProfile.screen_name || detectCurrentHandle() || 'X_User';
-    const payload = {
-      user: state.userProfile,
-      exportedAt: new Date().toISOString(),
-      mediaCount: items.length,
-      items: items
-    };
-
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
-    const u = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = u;
-    a.download = `${handle}_data_${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(u);
-  }
-
-  // =========================================================================
-  // 7. 新特性: 推文操作栏内嵌下载按钮 (In-Feed Download Button)
-  // =========================================================================
+  // 8. 信息流推文下载按钮 (In-Feed Download Button)
   function initTweetObserver() {
-    const observer = new MutationObserver((mutations) => {
-      scanAndInjectTweetButtons();
-    });
-
+    const observer = new MutationObserver(() => scanAndInjectTweetButtons());
     observer.observe(document.body, { childList: true, subtree: true });
     scanAndInjectTweetButtons();
   }
@@ -837,7 +896,6 @@
     const actionGroup = tweetArticle.querySelector('div[role="group"]');
     if (!actionGroup) return;
 
-    // 获取推文 ID
     const statusLink = tweetArticle.querySelector('a[href*="/status/"]');
     const match = statusLink?.getAttribute('href')?.match(/\/status\/(\d+)/);
     const tweetId = match ? match[1] : '';
@@ -864,7 +922,6 @@
       e.stopPropagation();
       e.preventDefault();
 
-      // 提取推文中的媒体
       const mediaItems = getMediaForTweet(tweetArticle, tweetId);
       if (mediaItems.length === 0) {
         alert('此推文中未检测到图片或视频');
@@ -872,7 +929,6 @@
       }
 
       if (mediaItems.length === 1) {
-        // 单图/单视频直接秒下
         downloadSingleMedia(mediaItems[0]);
         btn.classList.add('xmd-downloaded');
         btn.innerHTML = `
@@ -889,7 +945,6 @@
           `;
         }, 2000);
       } else {
-        // 多图/多视频弹出选择气泡菜单
         if (popover) {
           popover.remove();
           popover = null;
@@ -903,14 +958,11 @@
     };
   }
 
-  // 提取某条推文的所有媒体
   function getMediaForTweet(tweetArticle, tweetId) {
-    // 优先从 GraphQL 截获的 map 中取
     if (tweetId && state.tweetItemsMap.has(tweetId)) {
       return state.tweetItemsMap.get(tweetId);
     }
 
-    // 兜底从 DOM 中解析
     const results = [];
     const imgs = tweetArticle.querySelectorAll('img[src*="pbs.twimg.com/media/"]');
     imgs.forEach((img, idx) => {
@@ -945,7 +997,6 @@
     return results;
   }
 
-  // 创建弹出菜单
   function createPopoverMenu(items, parentWrap, onClose) {
     const pop = document.createElement('div');
     pop.className = 'xmd-popover-menu';
@@ -997,7 +1048,7 @@
     return pop;
   }
 
-  // 8. 启动
+  // 9. 启动
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
       createUI();

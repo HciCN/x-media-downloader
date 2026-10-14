@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>X-Media-Downloader 总控制台</title>
+  <link rel="stylesheet" href="dashboard.css">
+  <link rel="stylesheet" href="ui.css">
+</head>
+<body>
+  <!-- 顶部导航 -->
+  <header class="navbar">
+    <a href="#" class="nav-brand" id="nav-brand-btn">
+      <svg viewBox="0 0 24 24">
+        <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
+      </svg>
+      <span>X-Media Master Console</span>
+    </a>
+
+    <nav class="nav-tabs">
+      <button class="nav-tab-btn active" id="tab-btn-tasks">📂 本地任务库</button>
+      <button class="nav-tab-btn" id="tab-btn-detail" style="display:none;">📊 任务看板</button>
+      <button class="nav-tab-btn" id="tab-btn-settings">⚙️ 设置中心</button>
+    </nav>
+
+    <div class="nav-actions">
+      <a href="https://x.com" target="_blank" class="btn-x-link">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+        </svg>
+        前往 X.com
+      </a>
+    </div>
+  </header>
+
+  <!-- 主体视图区 -->
+  <main class="main-container">
+    <!-- 视图 1: 任务列表看板 -->
+    <section class="view-section active" id="view-task-list">
+      <div class="task-list-header">
+        <h1 class="task-list-title">本地已归档任务</h1>
+        <input type="text" class="task-search-input" id="task-search-input" placeholder="🔍 搜索博主昵称或 handle...">
+      </div>
+      <div class="task-cards-grid" id="task-cards-container">
+        <!-- 动态渲染任务卡片 -->
+      </div>
+      <div class="empty-state" id="task-list-empty" style="display:none;">
+        暂无本地抓取任务。在 X.com 浏览任意博主并点击悬浮窗抓取，数据将自动归档至此处！
+      </div>
+    </section>
+
+    <!-- 视图 2: 任务详情与多线程下载大屏 -->
+    <section class="view-section" id="view-task-detail">
+      <button class="btn btn-secondary detail-back-btn" id="detail-back-btn">
+        ← 返回任务列表
+      </button>
+
+      <!-- 博主信息名片与进度大屏 -->
+      <div class="detail-header-card">
+        <div class="detail-user-row">
+          <div class="detail-user-main">
+            <img class="detail-avatar-lg" id="detail-avatar" src="" alt="avatar" />
+            <div>
+              <div class="detail-user-name" id="detail-name">博主名称</div>
+              <div class="detail-user-handle" id="detail-handle">@username</div>
+              <div class="detail-user-bio" id="detail-bio"></div>
+            </div>
+          </div>
+          <div>
+            <span class="status-badge" id="detail-status-badge">pending</span>
+          </div>
+        </div>
+
+        <!-- 巨幅进度条 -->
+        <div class="big-progress-wrap">
+          <div class="big-progress-label">
+            <span id="detail-progress-summary">完成进度: 0 / 0</span>
+            <span id="detail-progress-pct" style="font-weight:700; color:var(--accent);">0%</span>
+          </div>
+          <div class="big-progress-bar">
+            <div class="big-progress-fill" id="detail-progress-fill" style="width:0%;"></div>
+          </div>
+        </div>
+
+        <!-- 四格核心指标卡片 -->
+        <div class="stats-board-grid">
+          <div class="board-card">
+            <div class="board-num" id="board-total" style="color:var(--text-main);">0</div>
+            <div class="board-label">总媒体数</div>
+          </div>
+          <div class="board-card">
+            <div class="board-num" id="board-completed" style="color:var(--success);">0</div>
+            <div class="board-label">已下载成功</div>
+          </div>
+          <div class="board-card">
+            <div class="board-num" id="board-pending" style="color:var(--warning);">0</div>
+            <div class="board-label">待下载</div>
+          </div>
+          <div class="board-card">
+            <div class="board-num" id="board-failed" style="color:var(--danger);">0</div>
+            <div class="board-label">下载失败项</div>
+          </div>
+        </div>
+
+        <!-- 操作按钮工具栏 -->
+        <div class="detail-actions-bar">
+          <button class="btn btn-primary" id="btn-start-download">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            开始批量下载
+          </button>
+          <button class="btn btn-secondary" id="btn-pause-download" disabled>暂停</button>
+          <button class="btn btn-secondary" id="btn-retry-failed">重试失败项</button>
+          <button class="btn btn-secondary" id="btn-redownload-all">重新下载全部</button>
+          <button class="btn btn-success" id="btn-export-zip">一键打包所选为 ZIP</button>
+          <button class="btn btn-secondary" id="btn-export-txt">复制/导出直链 TXT</button>
+          <button class="btn btn-danger" id="btn-delete-task" style="margin-left:auto;">删除任务</button>
+        </div>
+      </div>
+
+      <!-- 媒体瀑布流画廊区 -->
+      <div class="gallery-section-card">
+        <div class="gallery-header-bar">
+          <div class="gallery-filters">
+            <button class="filter-pill active" data-filter="all">全部 (<span id="count-all">0</span>)</button>
+            <button class="filter-pill" data-filter="image">图片 (<span id="count-images">0</span>)</button>
+            <button class="filter-pill" data-filter="video">视频 (<span id="count-videos">0</span>)</button>
+            <button class="filter-pill" data-filter="failed">失败项 (<span id="count-failed">0</span>)</button>
+          </div>
+
+          <div class="gallery-select-controls">
+            <button class="btn btn-secondary" id="btn-select-all" style="padding:6px 12px; font-size:12px;">全选</button>
+            <button class="btn btn-secondary" id="btn-select-none" style="padding:6px 12px; font-size:12px;">全不选</button>
+            <button class="btn btn-secondary" id="btn-select-invert" style="padding:6px 12px; font-size:12px;">反选</button>
+            <span style="font-size:13px; color:var(--text-muted); margin-left:8px;">
+              已选: <strong id="selected-items-count" style="color:var(--accent);">0</strong> 项
+            </span>
+          </div>
+        </div>
+
+        <div class="media-waterfall-grid" id="media-waterfall-grid">
+          <!-- 动态渲染单项媒体卡片 -->
+        </div>
+      </div>
+    </section>
+
+    <!-- 视图 3: 全局设置 -->
+    <section class="view-section" id="view-settings">
+      <div class="settings-card">
+        <h2 style="font-size:20px; font-weight:800;">下载与抓取参数设置</h2>
+
+        <div class="settings-group">
+          <label class="settings-label">下载并发数 (Concurrency): <span id="val-concurrency" style="color:var(--accent);">4</span></label>
+          <div class="settings-desc">同时进行的下载任务数（1~10），建议设置为 3~5 以平衡下载速度与带宽占用。</div>
+          <input type="range" min="1" max="10" value="4" id="setting-concurrency" style="accent-color:var(--accent); margin-top:8px;" />
+        </div>
+
+        <div class="settings-group">
+          <label class="settings-label">保存文件夹命名规则 (Folder Template)</label>
+          <div class="settings-desc">支持占位符: <code>{username}</code> (博主账号), <code>{name}</code> (博主昵称)</div>
+          <input type="text" class="settings-input" id="setting-folder" value="X-Media/{username}" />
+        </div>
+
+        <div class="settings-group">
+          <label class="settings-label">单文件命名规则 (Filename Template)</label>
+          <div class="settings-desc">支持占位符: <code>{username}</code>, <code>{tweet_id}</code>, <code>{index}</code></div>
+          <input type="text" class="settings-input" id="setting-filename" value="{username}_{tweet_id}_{index}" />
+        </div>
+
+        <div style="display:flex; align-items:center; gap:10px; margin-top:8px;">
+          <input type="checkbox" id="setting-skip-rt" checked style="accent-color:var(--accent); width:18px; height:18px;" />
+          <label for="setting-skip-rt" style="font-size:14px; cursor:pointer;">抓取时默认跳过转推 (Skip Retweets)</label>
+        </div>
+
+        <div>
+          <button class="btn btn-primary" id="btn-save-settings" style="padding:12px 28px;">
+            保存配置
+          </button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 沉浸式 Lightbox 播放器 -->
+  <div id="xmd-lightbox">
+    <button class="xmd-lightbox-close" id="lightbox-close-btn">✕</button>
+    <div class="xmd-lightbox-content">
+      <div id="lightbox-media-box"></div>
+      <div class="xmd-lightbox-bar">
+        <button class="xmd-lightbox-btn" id="lightbox-dl-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+          下载此文件
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="libs/jszip.min.js"></script>
+  <script src="dashboard.js"></script>
+</body>
+</html>

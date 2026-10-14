@@ -1,16 +1,21 @@
 {
   "manifest_version": 3,
   "name": "X-Media-Downloader (X/Twitter 批量媒体抓取与下载器)",
-  "version": "1.0.0",
-  "description": "一键批量抓取与高速下载 X/Twitter 博主推文的高清原图与最高码率视频，支持游标自动翻页、动态防风控退避、ZIP打包与直链导出。",
+  "version": "1.2.0",
+  "description": "一键批量抓取与高速下载 X/Twitter 博主推文的高清原图与最高码率视频，配备全功能 Web 总控制台、自动游标翻页、防风控退避、选择性ZIP打包与直链导出。",
   "permissions": [
     "downloads",
-    "storage"
+    "storage",
+    "unlimitedStorage"
   ],
   "host_permissions": [
     "*://*.twitter.com/*",
     "*://*.x.com/*"
   ],
+  "action": {
+    "default_title": "打开 X-Media-Downloader 控制台"
+  },
+  "options_page": "dashboard.html",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -38,7 +43,8 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "injected.js"
+        "injected.js",
+        "dashboard.html"
       ],
       "matches": [
         "*://*.twitter.com/*",
