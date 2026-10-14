@@ -1134,9 +1134,35 @@ video.xmd-gallery-media {
   word-break: break-all;
 }
 
+/* 智能二维码生成模式按钮 */
+.qr-mode-btn {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 4px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.qr-mode-btn:hover {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.qr-mode-btn.active {
+  background: var(--bg-card) !important;
+  color: var(--accent) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
 @media (max-width: 900px) {
   .console-hero-grid {
     grid-template-columns: 1fr;
   }
 }
+
 

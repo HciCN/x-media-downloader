@@ -138,16 +138,63 @@
           </div>
         </div>
 
-        <!-- 右侧：手机直连二维码 -->
-        <div class="console-card" style="display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;">
-          <div style="font-size:15px; font-weight:800; margin-bottom:12px; display:flex; align-items:center; gap:6px;">
-            <span>📱 手机扫码即看</span>
+        <!-- 右侧：手机直连 & 智能二维码中枢 -->
+        <div class="console-card" style="display:flex; flex-direction:column; align-items:center;">
+          <div style="width:100%; display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <div style="font-size:15px; font-weight:800; display:flex; align-items:center; gap:6px;">
+              <span>📱 智能二维码生成</span>
+            </div>
+            <span class="status-badge badge-done" id="qr-mode-badge" style="font-size:11px;">🌐 公网隧道</span>
           </div>
-          <div style="background:#fff; padding:10px; border-radius:14px; box-shadow:0 8px 24px rgba(0,0,0,0.4); margin-bottom:12px;">
-            <img id="console-qr-img" src="/api/qrcode" alt="手机扫码直达" style="width:170px; height:170px; display:block;" />
+
+          <!-- 模式切换选择器 -->
+          <div class="qr-mode-selector" style="width:100%; display:flex; background:var(--bg-hover); padding:3px; border-radius:10px; margin-bottom:12px; gap:4px;">
+            <button class="qr-mode-btn active" id="qr-tab-tunnel">
+              🌐 公网隧道
+            </button>
+            <button class="qr-mode-btn" id="qr-tab-lan">
+              📶 局域网
+            </button>
+            <button class="qr-mode-btn" id="qr-tab-custom">
+              ✏️ 自定义
+            </button>
           </div>
-          <div style="font-size:12px; color:var(--text-muted); line-height:1.5;">
-            手机相机或微信扫一扫<br>直接在手机全屏刷推文视频与相册
+
+          <!-- 二维码展示白框 -->
+          <div style="background:#fff; padding:10px; border-radius:14px; box-shadow:0 8px 24px rgba(0,0,0,0.4); margin-bottom:12px; position:relative;">
+            <img id="console-qr-img" src="/api/qrcode" alt="手机扫码直达" style="width:170px; height:170px; display:block; object-fit:contain;" />
+          </div>
+
+          <!-- 扫码说明与当前目标 URL -->
+          <div style="width:100%; margin-bottom:10px;">
+            <div style="font-size:11px; color:var(--text-muted); margin-bottom:4px; text-align:left; display:flex; justify-content:space-between;">
+              <span>二维码编码地址:</span>
+              <span id="qr-page-type-tag" style="color:var(--accent); font-weight:700;">🎬 抖音沉浸刷片</span>
+            </div>
+            <input type="text" id="console-qr-target-url" class="settings-input" style="width:100%; font-size:12px; padding:6px 10px;" placeholder="正在获取地址或输入任意自定义 URL..." />
+          </div>
+
+          <!-- 快捷切换页面与刷新生成 -->
+          <div style="width:100%; display:flex; gap:6px; margin-bottom:10px;">
+            <button class="btn btn-secondary" id="btn-qr-switch-page" style="flex:1; font-size:11px; padding:6px;" title="在 手机刷片(/mobile.html) 与 控制台(/dashboard.html) 间切换">
+              🔄 切换刷片/控制台
+            </button>
+            <button class="btn btn-primary" id="btn-qr-refresh" style="font-size:11px; padding:6px 12px;">
+              ⚡ 立即生成
+            </button>
+          </div>
+
+          <!-- 快捷操作：复制、打开、下载 -->
+          <div style="width:100%; display:flex; gap:6px;">
+            <button class="btn btn-secondary" id="btn-qr-copy" style="flex:1; font-size:11px; padding:6px;" title="复制当前二维码链接">
+              📋 复制
+            </button>
+            <a href="#" target="_blank" id="btn-qr-open" class="btn btn-secondary" style="flex:1; font-size:11px; padding:6px; text-decoration:none; display:inline-flex; align-items:center; justify-content:center;" title="在浏览器打开当前链接">
+              ↗ 打开
+            </a>
+            <a href="#" download="xmedia_qrcode.png" id="btn-qr-download" class="btn btn-secondary" style="flex:1; font-size:11px; padding:6px; text-decoration:none; display:inline-flex; align-items:center; justify-content:center;" title="下载并保存二维码图片">
+              💾 保存
+            </a>
           </div>
         </div>
       </div>

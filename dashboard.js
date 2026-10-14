@@ -174,6 +174,116 @@
   // =========================================================================
   // 0. Web 控制总台与媒体库管理逻辑
   // =========================================================================
+
+  // 智能二维码生成中心状态
+  const qrState = {
+    mode: 'tunnel',       // 'tunnel' | 'lan' | 'custom'
+    targetPage: 'mobile', // 'mobile' | 'dashboard'
+    tunnelUrl: '',        // 公网隧道基址 (如 https://xxx.trycloudflare.com/)
+    tunnelMobileUrl: '',  // 公网手机完整地址
+    lanIp: '',            // 局域网 IP
+    port: 8899,
+    customUrl: '',
+    lastGeneratedUrl: ''
+  };
+
+  function computeTargetUrl() {
+    if (qrState.mode === 'tunnel') {
+      if (qrState.tunnelUrl) {
+        let base = qrState.tunnelUrl.trim();
+        if (!base.endsWith('/')) base += '/';
+        return qrState.targetPage === 'mobile' ? `${base}mobile.html` : `${base}dashboard.html`;
+      }
+      return '';
+    } else if (qrState.mode === 'lan') {
+      const ip = qrState.lanIp || window.location.hostname || '127.0.0.1';
+      const port = qrState.port || window.location.port || 8899;
+      const portPart = port ? `:${port}` : '';
+      return qrState.targetPage === 'mobile'
+        ? `http://${ip}${portPart}/mobile.html`
+        : `http://${ip}${portPart}/dashboard.html`;
+    } else {
+      // custom
+      return (qrState.customUrl || '').trim();
+    }
+  }
+
+  function renderQrCode(forcedUrl) {
+    const qrImg = document.getElementById('console-qr-img');
+    const inputUrl = document.getElementById('console-qr-target-url');
+    const badge = document.getElementById('qr-mode-badge');
+    const pageTag = document.getElementById('qr-page-type-tag');
+    const openBtn = document.getElementById('btn-qr-open');
+    const tabTunnel = document.getElementById('qr-tab-tunnel');
+    const tabLan = document.getElementById('qr-tab-lan');
+    const tabCustom = document.getElementById('qr-tab-custom');
+
+    // 1. 更新 Tab 状态
+    if (tabTunnel) tabTunnel.classList.toggle('active', qrState.mode === 'tunnel');
+    if (tabLan) tabLan.classList.toggle('active', qrState.mode === 'lan');
+    if (tabCustom) tabCustom.classList.toggle('active', qrState.mode === 'custom');
+
+    // 2. 目标页面标签
+    if (pageTag) {
+      if (qrState.targetPage === 'mobile') {
+        pageTag.textContent = '🎬 抖音沉浸刷片 (/mobile.html)';
+      } else {
+        pageTag.textContent = '💻 控制总台 (/dashboard.html)';
+      }
+    }
+
+    // 3. 计算实际 URL
+    const targetUrl = forcedUrl !== undefined ? forcedUrl : computeTargetUrl();
+
+    // 4. 更新 Badge 提示
+    if (badge) {
+      if (qrState.mode === 'tunnel') {
+        if (qrState.tunnelUrl) {
+          badge.className = 'status-badge badge-done';
+          badge.textContent = '🌐 公网隧道 (HTTPS)';
+        } else {
+          badge.className = 'status-badge badge-running';
+          badge.textContent = '⏳ 隧道连接中...';
+        }
+      } else if (qrState.mode === 'lan') {
+        badge.className = 'status-badge badge-done';
+        badge.textContent = '📶 局域网 (Wi-Fi)';
+      } else {
+        badge.className = 'status-badge badge-done';
+        badge.textContent = '✏️ 自定义专属链接';
+      }
+    }
+
+    // 5. 更新输入框 (非用户正在打字时更新)
+    if (inputUrl && document.activeElement !== inputUrl) {
+      if (qrState.mode === 'tunnel' && !qrState.tunnelUrl) {
+        inputUrl.placeholder = 'Cloudflare 全球安全隧道连接中... (若急用可点上方【局域网】)';
+        inputUrl.value = '';
+      } else {
+        inputUrl.value = targetUrl;
+      }
+    }
+
+    // 6. 确定生成二维码的最终展示 URL
+    let displayUrl = targetUrl;
+    if (!displayUrl && qrState.mode === 'tunnel') {
+      const ip = qrState.lanIp || window.location.hostname || '127.0.0.1';
+      const port = qrState.port || window.location.port || 8899;
+      displayUrl = `http://${ip}:${port}/mobile.html`;
+    }
+
+    // 7. 更新二维码图像与打开链接
+    if (displayUrl) {
+      if (qrImg && qrState.lastGeneratedUrl !== displayUrl) {
+        qrState.lastGeneratedUrl = displayUrl;
+        qrImg.src = `/api/qrcode?url=${encodeURIComponent(displayUrl)}&_t=${Date.now()}`;
+      }
+      if (openBtn) {
+        openBtn.href = displayUrl;
+      }
+    }
+  }
+
   function bindConsoleEvents() {
     // 重新扫描全库按钮 (总控页面)
     const btnConsoleRescan = document.getElementById('btn-console-rescan');
@@ -256,7 +366,7 @@
       };
     }
 
-    // 复制链接按钮
+    // 复制链接通用按钮 (.btn-copy-url)
     document.querySelectorAll('.btn-copy-url').forEach(btn => {
       btn.onclick = () => {
         const targetId = btn.getAttribute('data-target');
@@ -274,6 +384,191 @@
         }
       };
     });
+
+    // --- 智能二维码生成中枢交互事件绑定 ---
+    const tabTunnel = document.getElementById('qr-tab-tunnel');
+    const tabLan = document.getElementById('qr-tab-lan');
+    const tabCustom = document.getElementById('qr-tab-custom');
+    const inputQrTarget = document.getElementById('console-qr-target-url');
+    const btnSwitchPage = document.getElementById('btn-qr-switch-page');
+    const btnQrRefresh = document.getElementById('btn-qr-refresh');
+    const btnQrCopy = document.getElementById('btn-qr-copy');
+    const btnQrOpen = document.getElementById('btn-qr-open');
+    const btnQrDownload = document.getElementById('btn-qr-download');
+
+    // 1. 切换至公网隧道
+    if (tabTunnel) {
+      tabTunnel.onclick = () => {
+        qrState.mode = 'tunnel';
+        renderQrCode();
+      };
+    }
+
+    // 2. 切换至局域网
+    if (tabLan) {
+      tabLan.onclick = () => {
+        qrState.mode = 'lan';
+        renderQrCode();
+      };
+    }
+
+    // 3. 切换至自定义模式
+    if (tabCustom) {
+      tabCustom.onclick = () => {
+        qrState.mode = 'custom';
+        if (inputQrTarget && !qrState.customUrl) {
+          qrState.customUrl = inputQrTarget.value.trim() || computeTargetUrl();
+        }
+        renderQrCode();
+        if (inputQrTarget) {
+          inputQrTarget.focus();
+          inputQrTarget.select();
+        }
+      };
+    }
+
+    // 4. 输入框实时联动 (防抖生成)
+    if (inputQrTarget) {
+      let qrInputTimer = null;
+      inputQrTarget.addEventListener('input', () => {
+        qrState.mode = 'custom';
+        qrState.customUrl = inputQrTarget.value.trim();
+        if (tabTunnel) tabTunnel.classList.remove('active');
+        if (tabLan) tabLan.classList.remove('active');
+        if (tabCustom) tabCustom.classList.add('active');
+        const badge = document.getElementById('qr-mode-badge');
+        if (badge) {
+          badge.className = 'status-badge badge-done';
+          badge.textContent = '✏️ 自定义专属链接';
+        }
+        clearTimeout(qrInputTimer);
+        qrInputTimer = setTimeout(() => {
+          renderQrCode();
+        }, 350);
+      });
+
+      inputQrTarget.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          qrState.mode = 'custom';
+          qrState.customUrl = inputQrTarget.value.trim();
+          renderQrCode();
+          inputQrTarget.blur();
+        }
+      });
+    }
+
+    // 5. 切换目标页面 (手机刷片 / 控制台)
+    if (btnSwitchPage) {
+      btnSwitchPage.onclick = () => {
+        qrState.targetPage = (qrState.targetPage === 'mobile') ? 'dashboard' : 'mobile';
+        if (qrState.mode === 'custom') {
+          let url = (inputQrTarget?.value || qrState.customUrl || '').trim();
+          if (url.includes('mobile.html')) {
+            url = url.replace('mobile.html', 'dashboard.html');
+          } else if (url.includes('dashboard.html')) {
+            url = url.replace('dashboard.html', 'mobile.html');
+          } else if (url.endsWith('/')) {
+            url = url + (qrState.targetPage === 'mobile' ? 'mobile.html' : 'dashboard.html');
+          } else if (url) {
+            try {
+              const u = new URL(url);
+              u.pathname = (qrState.targetPage === 'mobile' ? '/mobile.html' : '/dashboard.html');
+              url = u.toString();
+            } catch (_) {}
+          }
+          qrState.customUrl = url;
+          if (inputQrTarget) inputQrTarget.value = url;
+        }
+        renderQrCode();
+      };
+    }
+
+    // 6. 立即刷新生成二维码
+    if (btnQrRefresh) {
+      btnQrRefresh.onclick = () => {
+        if (inputQrTarget && inputQrTarget.value.trim()) {
+          qrState.customUrl = inputQrTarget.value.trim();
+        }
+        renderQrCode();
+        const origText = btnQrRefresh.innerHTML;
+        btnQrRefresh.innerHTML = '<span>✓ 已更新</span>';
+        setTimeout(() => {
+          btnQrRefresh.innerHTML = origText;
+        }, 1200);
+      };
+    }
+
+    // 7. 复制二维码目标链接
+    if (btnQrCopy) {
+      btnQrCopy.onclick = () => {
+        const urlToCopy = (inputQrTarget?.value || qrState.lastGeneratedUrl || '').trim();
+        if (urlToCopy) {
+          const successCallback = () => {
+            const orig = btnQrCopy.innerHTML;
+            btnQrCopy.innerHTML = '<span style="color:var(--success); font-weight:700;">✓ 已复制!</span>';
+            setTimeout(() => {
+              btnQrCopy.innerHTML = orig;
+            }, 2000);
+          };
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(urlToCopy).then(successCallback).catch(() => {
+              if (inputQrTarget) {
+                inputQrTarget.select();
+                document.execCommand('copy');
+                successCallback();
+              }
+            });
+          } else if (inputQrTarget) {
+            inputQrTarget.select();
+            document.execCommand('copy');
+            successCallback();
+          }
+        }
+      };
+    }
+
+    // 8. 打开链接检查
+    if (btnQrOpen) {
+      btnQrOpen.onclick = (e) => {
+        const target = (inputQrTarget?.value || qrState.lastGeneratedUrl || '').trim();
+        if (!target) {
+          e.preventDefault();
+          alert('暂无可打开的有效链接，请先生成或输入目标地址');
+          return;
+        }
+        btnQrOpen.href = target;
+      };
+    }
+
+    // 9. 保存/下载二维码图片
+    if (btnQrDownload) {
+      btnQrDownload.onclick = async (e) => {
+        e.preventDefault();
+        const qrImg = document.getElementById('console-qr-img');
+        if (!qrImg || !qrImg.src) return;
+        const orig = btnQrDownload.innerHTML;
+        btnQrDownload.innerHTML = '<span>⏳ 保存中...</span>';
+        try {
+          const resp = await fetch(qrImg.src);
+          const blob = await resp.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = blobUrl;
+          a.download = `xmedia_qrcode_${qrState.mode}_${qrState.targetPage}_${Date.now()}.png`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+        } catch (err) {
+          window.open(qrImg.src, '_blank');
+        } finally {
+          setTimeout(() => {
+            btnQrDownload.innerHTML = orig;
+          }, 800);
+        }
+      };
+    }
   }
 
   async function loadServerStats() {
@@ -298,6 +593,12 @@
         if (lanInput) lanInput.value = res.mobile_url || '';
         if (lanOpen) lanOpen.href = res.mobile_url || '#';
 
+        // 局域网移动端中心同步 IP
+        const remoteIpInput = document.getElementById('remote-ip-input');
+        if (remoteIpInput && !remoteIpInput.value && res.lan_ip) {
+          remoteIpInput.value = res.lan_ip;
+        }
+
         // 公网隧道
         const tunnelRow = document.getElementById('console-tunnel-row');
         const tunnelInput = document.getElementById('console-tunnel-url');
@@ -310,11 +611,19 @@
           if (tunnelRow) tunnelRow.style.display = 'none';
         }
 
-        // 动态二维码
-        const qrImg = document.getElementById('console-qr-img');
-        const qrUrl = res.tunnel_mobile_url || res.mobile_url;
-        if (qrImg && qrUrl) {
-          qrImg.src = `/api/qrcode?url=${encodeURIComponent(qrUrl)}&_t=${Date.now()}`;
+        // 智能二维码参数更新
+        qrState.lanIp = res.lan_ip || qrState.lanIp;
+        qrState.port = res.port || qrState.port;
+        if (res.tunnel_url) {
+          qrState.tunnelUrl = res.tunnel_url;
+        }
+        if (res.tunnel_mobile_url) {
+          qrState.tunnelMobileUrl = res.tunnel_mobile_url;
+        }
+
+        // 渲染智能二维码 (若处于自定义模式且用户已输入自定义链接则不强制覆盖输入内容)
+        if (qrState.mode !== 'custom' || !qrState.customUrl) {
+          renderQrCode();
         }
 
         // 加载近期博主列表
