@@ -8,6 +8,20 @@ X-Media-Downloader - 安卓局域网无线远程流媒体服务器
 
 import sys
 import os
+import shutil
+
+# 彻底禁用 Python 字节码缓存生成，避免生成 __pycache__ 导致 Chrome 扩展加载报错
+sys.dont_write_bytecode = True
+
+# 启动时自动检查并清除可能残留的 __pycache__ 目录
+_curr_dir = os.path.dirname(os.path.abspath(__file__))
+_pycache_dir = os.path.join(_curr_dir, '__pycache__')
+if os.path.exists(_pycache_dir):
+    try:
+        shutil.rmtree(_pycache_dir, ignore_errors=True)
+    except Exception:
+        pass
+
 import socket
 import re
 from http.server import HTTPServer, SimpleHTTPRequestHandler
