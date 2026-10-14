@@ -1,0 +1,1129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#000000">
+  <title>X-Media 沉浸抖音短视频流</title>
+  <style>
+    :root {
+      --bg: #000000;
+      --accent: #1d9bf0;
+      --success: #00ba7c;
+      --heart: #ff2442;
+      --text: #ffffff;
+      --text-sub: rgba(255, 255, 255, 0.75);
+      --glass-bg: rgba(0, 0, 0, 0.45);
+      --glass-border: rgba(255, 255, 255, 0.18);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html, body {
+      width: 100vw;
+      height: 100vh;
+      height: 100dvh;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    /* 顶部导航浮层 */
+    .top-nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 50;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: max(14px, env(safe-area-inset-top, 14px)) 16px 12px 16px;
+      background: linear-gradient(180deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.3) 60%, transparent 100%);
+      pointer-events: none;
+    }
+
+    .top-nav > * {
+      pointer-events: auto;
+    }
+
+    .blogger-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      padding: 6px 14px 6px 8px;
+      border-radius: 24px;
+      cursor: pointer;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+      max-width: 60vw;
+      transition: transform 0.15s;
+    }
+
+    .blogger-pill:active {
+      transform: scale(0.96);
+    }
+
+    .blogger-avatar-mini {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      object-fit: cover;
+      flex-shrink: 0;
+    }
+
+    .blogger-name-text {
+      font-size: 14px;
+      font-weight: 700;
+      color: #fff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .dropdown-arrow {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.6);
+      margin-left: 2px;
+    }
+
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .icon-pill-btn {
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      color: #fff;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+      transition: all 0.15s;
+    }
+
+    .icon-pill-btn:active {
+      transform: scale(0.94);
+    }
+
+    /* 解除静音提示气泡 */
+    .sound-prompt-bubble {
+      position: fixed;
+      top: max(68px, calc(env(safe-area-inset-top, 20px) + 50px));
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 55;
+      background: rgba(29, 155, 240, 0.9);
+      color: #fff;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 700;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.6);
+      animation: pulseBounce 1.8s infinite;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    @keyframes pulseBounce {
+      0%, 100% { transform: translateX(-50%) scale(1); }
+      50% { transform: translateX(-50%) scale(1.06); }
+    }
+
+    /* 抖音上下滑轨主容器 */
+    .feed-container {
+      width: 100vw;
+      height: 100vh;
+      height: 100dvh;
+      overflow-y: scroll;
+      scroll-snap-type: y mandatory;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-y: contain;
+      scroll-behavior: smooth;
+    }
+
+    .feed-container::-webkit-scrollbar {
+      display: none;
+    }
+
+    /* 单个短视频/图片幻灯片 */
+    .slide-item {
+      width: 100vw;
+      height: 100vh;
+      height: 100dvh;
+      scroll-snap-align: start;
+      scroll-snap-stop: always;
+      position: relative;
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .media-wrapper {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+    }
+
+    .slide-media {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+      outline: none;
+      background: #000;
+    }
+
+    /* 右侧悬浮功能操作栏 (抖音经典布局) */
+    .right-bar {
+      position: absolute;
+      right: 12px;
+      bottom: max(75px, calc(env(safe-area-inset-bottom, 20px) + 55px));
+      z-index: 30;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      pointer-events: auto;
+    }
+
+    .action-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      background: transparent;
+      border: none;
+      color: #fff;
+      cursor: pointer;
+      text-decoration: none;
+    }
+
+    .action-btn-circle {
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      background: rgba(30, 30, 30, 0.65);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+      transition: transform 0.15s, background-color 0.15s;
+    }
+
+    .action-btn:active .action-btn-circle {
+      transform: scale(0.9);
+      background: rgba(29, 155, 240, 0.8);
+    }
+
+    .action-btn-label {
+      font-size: 11px;
+      color: #fff;
+      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+      font-weight: 600;
+    }
+
+    /* 底部作者与推文信息区 */
+    .bottom-info-area {
+      position: absolute;
+      left: 16px;
+      right: 80px;
+      bottom: max(22px, calc(env(safe-area-inset-bottom, 12px) + 12px));
+      z-index: 30;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      pointer-events: auto;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+    }
+
+    .author-line {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .author-name {
+      font-size: 16px;
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: 0.3px;
+    }
+
+    .media-badge {
+      font-size: 10px;
+      font-weight: 800;
+      padding: 2px 7px;
+      border-radius: 4px;
+      background: var(--accent);
+      color: #fff;
+      letter-spacing: 0.5px;
+    }
+
+    .tweet-text {
+      font-size: 13.5px;
+      line-height: 1.45;
+      color: #f7f9fa;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      cursor: pointer;
+    }
+
+    .tweet-text.expanded {
+      -webkit-line-clamp: unset;
+      background: rgba(0, 0, 0, 0.65);
+      padding: 6px 10px;
+      border-radius: 8px;
+      backdrop-filter: blur(8px);
+    }
+
+    .meta-line {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 11.5px;
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    /* 视频底部进度条 */
+    .progress-bar-wrap {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.2);
+      z-index: 40;
+      cursor: pointer;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--accent);
+      transition: width 0.1s linear;
+    }
+
+    /* 播放/暂停大图标动效 */
+    .play-indicator-overlay {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0.85);
+      width: 76px;
+      height: 76px;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.55);
+      backdrop-filter: blur(10px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s, transform 0.2s;
+      z-index: 25;
+    }
+
+    .play-indicator-overlay.visible {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+    }
+
+    /* 双击红心动效 */
+    .heart-burst {
+      position: absolute;
+      width: 80px;
+      height: 80px;
+      color: var(--heart);
+      pointer-events: none;
+      z-index: 60;
+      animation: heartAnim 0.75s ease-out forwards;
+      transform: translate(-50%, -50%);
+    }
+
+    @keyframes heartAnim {
+      0% { transform: translate(-50%, -50%) scale(0.3) rotate(-15deg); opacity: 0; }
+      40% { transform: translate(-50%, -50%) scale(1.3) rotate(10deg); opacity: 1; }
+      100% { transform: translate(-50%, -100%) scale(1.1) rotate(0deg); opacity: 0; }
+    }
+
+    /* 宫格模式覆盖层 */
+    .grid-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 80;
+      background: #000;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .grid-header {
+      padding: max(14px, env(safe-area-inset-top, 14px)) 16px 12px 16px;
+      background: #111;
+      border-bottom: 1px solid #222;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .close-grid-btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 6px 14px;
+      border-radius: 18px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .grid-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .grid-thumb-card {
+      position: relative;
+      aspect-ratio: 9/16;
+      background: #16181c;
+      border-radius: 8px;
+      overflow: hidden;
+      cursor: pointer;
+    }
+
+    .grid-thumb-card.active {
+      border: 2px solid var(--accent);
+    }
+
+    .grid-thumb-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .grid-badge {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      background: rgba(0,0,0,0.7);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 800;
+      padding: 2px 5px;
+      border-radius: 4px;
+    }
+
+    /* 底部博主抽屉 */
+    .sheet-mask {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      backdrop-filter: blur(4px);
+    }
+
+    .bottom-sheet {
+      background: #16181c;
+      border-top: 1px solid #2f3336;
+      border-radius: 20px 20px 0 0;
+      max-height: 70vh;
+      display: flex;
+      flex-direction: column;
+      padding-bottom: max(20px, env(safe-area-inset-bottom, 20px));
+      animation: sheetUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes sheetUp {
+      from { transform: translateY(100%); }
+      to { transform: translateY(0); }
+    }
+
+    .sheet-header {
+      padding: 16px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #222;
+    }
+
+    .sheet-title {
+      font-size: 16px;
+      font-weight: 800;
+      color: #fff;
+    }
+
+    .sheet-close {
+      background: rgba(255, 255, 255, 0.1);
+      border: none;
+      color: #fff;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+
+    .sheet-list {
+      overflow-y: auto;
+      padding: 10px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .blogger-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      background: #202327;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .blogger-item:active {
+      background: #2c3035;
+    }
+
+    .blogger-item.current {
+      border: 1px solid var(--accent);
+      background: rgba(29, 155, 240, 0.15);
+    }
+
+    .blogger-item-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: #333;
+      object-fit: cover;
+    }
+
+    .blogger-item-info {
+      flex: 1;
+    }
+
+    .blogger-item-name {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .blogger-item-count {
+      font-size: 12px;
+      color: var(--text-sub);
+      margin-top: 2px;
+    }
+
+    /* 空状态与加载中 */
+    .empty-state {
+      height: 100vh;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-sub);
+      gap: 12px;
+      text-align: center;
+      padding: 24px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 顶部悬浮控制栏 -->
+  <header class="top-nav">
+    <div class="blogger-pill" id="btn-open-drawer">
+      <div class="blogger-avatar-mini" id="nav-avatar">👤</div>
+      <span class="blogger-name-text" id="nav-blogger-name">正在加载媒体...</span>
+      <span class="dropdown-arrow">▾</span>
+    </div>
+
+    <div class="top-actions">
+      <button class="icon-pill-btn" id="btn-sound-toggle">
+        <span id="sound-icon">🔇</span>
+      </button>
+      <button class="icon-pill-btn" id="btn-view-mode-toggle">
+        <span id="mode-icon">⊞ 宫格</span>
+      </button>
+      <a href="/dashboard.html" class="icon-pill-btn" style="text-decoration:none;">
+        <span>💻 看板</span>
+      </a>
+    </div>
+  </header>
+
+  <!-- 初次静音解锁提示 -->
+  <div class="sound-prompt-bubble" id="sound-prompt" style="display:none;">
+    🔊 点此开启声音 (与刷抖音一致)
+  </div>
+
+  <!-- 核心上下滑动的短视频流 -->
+  <main class="feed-container" id="feed-container">
+    <div class="empty-state" id="loading-state">
+      <div style="font-size:32px;">⏳</div>
+      <div>正在连接电脑媒体服务...</div>
+    </div>
+  </main>
+
+  <!-- 暂停 / 播放动效图标 -->
+  <div class="play-indicator-overlay" id="play-indicator">
+    <svg viewBox="0 0 24 24" width="40" height="40" fill="currentColor">
+      <polygon points="5 3 19 12 5 21 5 3"></polygon>
+    </svg>
+  </div>
+
+  <!-- 双击点赞爱心图层 -->
+  <div id="heart-container"></div>
+
+  <!-- 宫格速览视图 -->
+  <section class="grid-overlay" id="grid-overlay" style="display:none;">
+    <div class="grid-header">
+      <div style="font-weight:800; font-size:16px;">⊞ 全部视频与图片 (<span id="grid-total-count">0</span>)</div>
+      <button class="close-grid-btn" id="btn-close-grid">✕ 返回刷视频</button>
+    </div>
+    <div class="grid-body" id="grid-body"></div>
+  </section>
+
+  <!-- 切换博主抽屉 -->
+  <div class="sheet-mask" id="sheet-mask" style="display:none;">
+    <div class="bottom-sheet" id="bottom-sheet">
+      <div class="sheet-header">
+        <div class="sheet-title">📱 切换博主媒体库</div>
+        <button class="sheet-close" id="btn-close-sheet">✕</button>
+      </div>
+      <div class="sheet-list" id="blogger-list"></div>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      // 核心状态机
+      const state = {
+        tasks: [],
+        currentTask: null,
+        items: [],
+        currentIndex: 0,
+        isMuted: true,
+        userInteracted: false,
+        slideElements: []
+      };
+
+      const feed = document.getElementById('feed-container');
+      const soundPrompt = document.getElementById('sound-prompt');
+      const soundIcon = document.getElementById('sound-icon');
+      const navName = document.getElementById('nav-blogger-name');
+      const navAvatar = document.getElementById('nav-avatar');
+      const sheetMask = document.getElementById('sheet-mask');
+      const bloggerList = document.getElementById('blogger-list');
+      const playIndicator = document.getElementById('play-indicator');
+      const gridOverlay = document.getElementById('grid-overlay');
+      const gridBody = document.getElementById('grid-body');
+
+      // 1. 初始化拉取任务列表
+      async function init() {
+        try {
+          const res = await fetch('/api/tasks');
+          const data = await res.json();
+          if (data && data.success && data.tasks && data.tasks.length > 0) {
+            state.tasks = data.tasks;
+            // 优先选择包含本地扫描媒体的任务 (如 @MuShe24125)
+            const preferred = state.tasks.find(t => (t.media_count || 0) > 0) || state.tasks[0];
+            await selectTask(preferred.id);
+          } else {
+            document.getElementById('loading-state').innerHTML = '⚠️ 电脑未检测到已下载媒体，请在控制台抓取或确保 start_remote_server.bat 运行。';
+          }
+        } catch (e) {
+          console.error(e);
+          document.getElementById('loading-state').innerHTML = '❌ 无法连接服务器，请确认手机与电脑连接同一 Wi-Fi 或处于穿透网络中。';
+        }
+      }
+
+      // 2. 选择博主并载入其推文媒体
+      async function selectTask(taskId) {
+        state.currentIndex = 0;
+        sheetMask.style.display = 'none';
+        feed.innerHTML = '<div class="empty-state"><div style="font-size:32px;">⏳</div><div>正在加载该博主短视频流...</div></div>';
+
+        try {
+          const res = await fetch(`/api/task_detail?id=${encodeURIComponent(taskId)}`);
+          const data = await res.json();
+          if (data && data.success) {
+            state.currentTask = data.task;
+            state.items = data.items || [];
+
+            // 更新顶部博主标题
+            const handle = state.currentTask.x_screen_name || 'X_User';
+            const name = state.currentTask.x_name || state.currentTask.task_name || handle;
+            navName.textContent = `@${handle} (${state.items.length})`;
+            if (state.currentTask.x_avatar) {
+              navAvatar.innerHTML = `<img src="${state.currentTask.x_avatar}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;" />`;
+            } else {
+              navAvatar.textContent = name[0] || 'X';
+            }
+
+            renderFeed();
+            renderGrid();
+          }
+        } catch (e) {
+          feed.innerHTML = '<div class="empty-state">❌ 获取详情失败</div>';
+        }
+      }
+
+      // 3. 渲染全屏抖音瀑布流 Slides
+      function renderFeed() {
+        feed.innerHTML = '';
+        state.slideElements = [];
+
+        if (state.items.length === 0) {
+          feed.innerHTML = '<div class="empty-state">该博主暂无已抓取或已下载的媒体</div>';
+          return;
+        }
+
+        const fragment = document.createDocumentFragment();
+
+        state.items.forEach((item, index) => {
+          const slide = document.createElement('div');
+          slide.className = 'slide-item';
+          slide.dataset.index = index;
+
+          const isVideo = item.mediaType === 'video';
+          const tweetUrl = item.tweetId && item.tweetId !== 'unknown' ? `https://x.com/i/status/${item.tweetId}` : '';
+          const authorHandle = state.currentTask?.x_screen_name || 'X_User';
+          const authorName = state.currentTask?.x_name || authorHandle;
+          const tweetText = (item.tweetText || '').trim();
+
+          // 幻灯片 DOM 结构
+          slide.innerHTML = `
+            <div class="media-wrapper">
+              ${isVideo ? `
+                <video
+                  class="slide-media"
+                  playsinline
+                  webkit-playsinline="true"
+                  x5-video-player-type="h5-page"
+                  x5-video-player-fullscreen="true"
+                  x5-playsinline="true"
+                  loop
+                  preload="${index === 0 ? 'auto' : 'metadata'}"
+                  data-src="${item.mediaUrl}"
+                  ${index === 0 ? `src="${item.mediaUrl}"` : ''}
+                ></video>
+              ` : `
+                <img class="slide-media" src="${item.mediaUrl}" loading="lazy" />
+              `}
+            </div>
+
+            <!-- 右侧悬浮操作栏 (仿抖音) -->
+            <div class="right-bar">
+              <div class="action-btn">
+                <div class="action-btn-circle" style="border: 2px solid var(--accent); padding: 2px;">
+                  <span style="font-size:18px;">👤</span>
+                </div>
+                <span class="action-btn-label">博主</span>
+              </div>
+
+              ${tweetUrl ? `
+                <a href="${tweetUrl}" target="_blank" class="action-btn">
+                  <div class="action-btn-circle">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                    </svg>
+                  </div>
+                  <span class="action-btn-label">原推 ↗</span>
+                </a>
+              ` : ''}
+
+              <button class="action-btn btn-dl-slide" data-index="${index}">
+                <div class="action-btn-circle">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                  </svg>
+                </div>
+                <span class="action-btn-label">下载</span>
+              </button>
+            </div>
+
+            <!-- 底部作者与推文信息 -->
+            <div class="bottom-info-area">
+              <div class="author-line">
+                <span class="author-name">@${authorHandle}</span>
+                <span class="media-badge">${isVideo ? 'MP4 视频' : 'JPG 高清'}</span>
+              </div>
+              ${tweetText ? `
+                <div class="tweet-text" title="点击展开全文">${escapeHtml(tweetText)}</div>
+              ` : ''}
+              <div class="meta-line">
+                <span>📹 第 ${index + 1} / ${state.items.length} 个媒体</span>
+                <span>• 上下滑动切片</span>
+              </div>
+            </div>
+
+            <!-- 底部细线条进度条 -->
+            ${isVideo ? `
+              <div class="progress-bar-wrap">
+                <div class="progress-bar-fill"></div>
+              </div>
+            ` : ''}
+          `;
+
+          // 绑定推文文本展开/收起
+          const textEl = slide.querySelector('.tweet-text');
+          if (textEl) {
+            textEl.onclick = (e) => {
+              e.stopPropagation();
+              textEl.classList.toggle('expanded');
+            };
+          }
+
+          // 绑定下载按钮
+          const dlBtn = slide.querySelector('.btn-dl-slide');
+          if (dlBtn) {
+            dlBtn.onclick = (e) => {
+              e.stopPropagation();
+              downloadMedia(item);
+            };
+          }
+
+          // 绑定视频进度更新
+          if (isVideo) {
+            const vid = slide.querySelector('video');
+            const fill = slide.querySelector('.progress-bar-fill');
+            const wrap = slide.querySelector('.progress-bar-wrap');
+            if (vid && fill) {
+              vid.ontimeupdate = () => {
+                if (vid.duration) {
+                  fill.style.width = `${(vid.currentTime / vid.duration) * 100}%`;
+                }
+              };
+              if (wrap) {
+                wrap.onclick = (e) => {
+                  e.stopPropagation();
+                  const rect = wrap.getBoundingClientRect();
+                  const pct = (e.clientX - rect.left) / rect.width;
+                  if (vid.duration) vid.currentTime = pct * vid.duration;
+                };
+              }
+            }
+          }
+
+          // 绑定屏幕点击 (单击暂停/播放，双击点赞爱心)
+          bindTapGestures(slide, item);
+
+          fragment.appendChild(slide);
+          state.slideElements.push(slide);
+        });
+
+        feed.appendChild(fragment);
+
+        // 启动观察器，监听哪张 slide 滑入了视口
+        setupIntersectionObserver();
+
+        // 第一次进入自动播放首个视频 (如受限静音播)
+        setTimeout(() => {
+          activateSlide(0);
+          if (state.isMuted) {
+            soundPrompt.style.display = 'block';
+          }
+        }, 300);
+      }
+
+      // 4. 监听视口 IntersectionObserver (滑动即播，离屏即停)
+      let observer = null;
+      function setupIntersectionObserver() {
+        if (observer) observer.disconnect();
+
+        observer = new IntersectionObserver((entries) => {
+          entries.forEach(entry => {
+            const slide = entry.target;
+            const index = parseInt(slide.dataset.index);
+
+            if (entry.isIntersecting && entry.intersectionRatio >= 0.55) {
+              activateSlide(index);
+            } else {
+              deactivateSlide(slide);
+            }
+          });
+        }, {
+          root: feed,
+          threshold: [0.55]
+        });
+
+        state.slideElements.forEach(s => observer.observe(s));
+      }
+
+      // 激活某一 Slide (播放视频，动态挂载临近媒体)
+      function activateSlide(index) {
+        state.currentIndex = index;
+
+        state.slideElements.forEach((s, idx) => {
+          const vid = s.querySelector('video');
+          if (!vid) return;
+
+          if (idx === index) {
+            // 确保视频源已加载
+            if (!vid.src && vid.dataset.src) {
+              vid.src = vid.dataset.src;
+            }
+            vid.muted = state.isMuted;
+            const p = vid.play();
+            if (p) {
+              p.catch(() => {
+                // 如果带声音受限，强制静音启播
+                vid.muted = true;
+                vid.play().catch(() => {});
+              });
+            }
+          } else if (Math.abs(idx - index) <= 1) {
+            // 预加载前一张和后一张
+            if (!vid.src && vid.dataset.src) {
+              vid.src = vid.dataset.src;
+            }
+          } else {
+            // 离得较远的视频彻底销毁释放显存
+            vid.pause();
+            if (vid.src && Math.abs(idx - index) > 3) {
+              vid.removeAttribute('src');
+              vid.load();
+            }
+          }
+        });
+      }
+
+      // 离开视口时暂停
+      function deactivateSlide(slide) {
+        const vid = slide.querySelector('video');
+        if (vid) {
+          vid.pause();
+        }
+      }
+
+      // 5. 屏幕手势 (单击暂停/播放，双击爱心)
+      function bindTapGestures(slide, item) {
+        let lastTap = 0;
+        let tapTimeout = null;
+
+        slide.onclick = (e) => {
+          // 排除右侧按钮或底部链接
+          if (e.target.closest('.right-bar, .bottom-info-area, .progress-bar-wrap')) return;
+
+          const now = Date.now();
+          if (now - lastTap < 300) {
+            // 双击点赞
+            clearTimeout(tapTimeout);
+            triggerHeartAnimation(e.clientX, e.clientY);
+          } else {
+            // 单击暂停/播放
+            tapTimeout = setTimeout(() => {
+              togglePlayState(slide);
+            }, 300);
+          }
+          lastTap = now;
+
+          // 任何点击均解锁声音能力
+          if (!state.userInteracted) {
+            state.userInteracted = true;
+            unlockSound();
+          }
+        };
+      }
+
+      // 切换播放/暂停
+      function togglePlayState(slide) {
+        const vid = slide.querySelector('video');
+        if (!vid) return;
+
+        if (vid.paused) {
+          vid.play();
+          playIndicator.classList.remove('visible');
+        } else {
+          vid.pause();
+          playIndicator.classList.add('visible');
+        }
+      }
+
+      // 双击飘爱心动画
+      function triggerHeartAnimation(x, y) {
+        const h = document.createElement('div');
+        h.className = 'heart-burst';
+        h.style.left = `${x}px`;
+        h.style.top = `${y}px`;
+        h.innerHTML = `
+          <svg viewBox="0 0 24 24" width="100%" height="100%" fill="currentColor">
+            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+          </svg>
+        `;
+        document.getElementById('heart-container').appendChild(h);
+        setTimeout(() => h.remove(), 750);
+      }
+
+      // 6. 音量/声音开关
+      function unlockSound() {
+        state.isMuted = false;
+        soundIcon.textContent = '🔊';
+        soundPrompt.style.display = 'none';
+        const curSlide = state.slideElements[state.currentIndex];
+        if (curSlide) {
+          const vid = curSlide.querySelector('video');
+          if (vid) vid.muted = false;
+        }
+      }
+
+      soundPrompt.onclick = unlockSound;
+      document.getElementById('btn-sound-toggle').onclick = () => {
+        state.isMuted = !state.isMuted;
+        soundIcon.textContent = state.isMuted ? '🔇' : '🔊';
+        const curSlide = state.slideElements[state.currentIndex];
+        if (curSlide) {
+          const vid = curSlide.querySelector('video');
+          if (vid) vid.muted = state.isMuted;
+        }
+      };
+
+      // 7. 宫格视图逻辑
+      function renderGrid() {
+        gridBody.innerHTML = '';
+        document.getElementById('grid-total-count').textContent = state.items.length;
+
+        state.items.forEach((item, idx) => {
+          const card = document.createElement('div');
+          card.className = 'grid-thumb-card' + (idx === state.currentIndex ? ' active' : '');
+          card.innerHTML = `
+            <img class="grid-thumb-img" src="${item.thumbUrl || item.mediaUrl}" loading="lazy" />
+            <span class="grid-badge">${item.mediaType === 'video' ? 'MP4' : 'IMG'}</span>
+          `;
+          card.onclick = () => {
+            gridOverlay.style.display = 'none';
+            // 平滑滚动定位到指定的幻灯片
+            const targetSlide = state.slideElements[idx];
+            if (targetSlide) {
+              targetSlide.scrollIntoView({ behavior: 'smooth' });
+            }
+          };
+          gridBody.appendChild(card);
+        });
+      }
+
+      document.getElementById('btn-view-mode-toggle').onclick = () => {
+        gridOverlay.style.display = 'flex';
+      };
+      document.getElementById('btn-close-grid').onclick = () => {
+        gridOverlay.style.display = 'none';
+      };
+
+      // 8. 切换博主抽屉逻辑
+      document.getElementById('btn-open-drawer').onclick = () => {
+        bloggerList.innerHTML = '';
+        state.tasks.forEach(t => {
+          const item = document.createElement('div');
+          item.className = 'blogger-item' + (state.currentTask?.id === t.id ? ' current' : '');
+          const count = t.media_count || 0;
+          const handle = t.x_screen_name || 'X_User';
+          const name = t.x_name || t.task_name || handle;
+
+          item.innerHTML = `
+            <div class="blogger-item-avatar" style="display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700;">
+              ${t.x_avatar ? `<img src="${t.x_avatar}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;" />` : name[0]}
+            </div>
+            <div class="blogger-item-info">
+              <div class="blogger-item-name">${escapeHtml(name)} (@${escapeHtml(handle)})</div>
+              <div class="blogger-item-count">📹 包含 ${count} 个媒体条目</div>
+            </div>
+          `;
+          item.onclick = () => selectTask(t.id);
+          bloggerList.appendChild(item);
+        });
+        sheetMask.style.display = 'flex';
+      };
+
+      document.getElementById('btn-close-sheet').onclick = () => {
+        sheetMask.style.display = 'none';
+      };
+      sheetMask.onclick = (e) => {
+        if (e.target === sheetMask) sheetMask.style.display = 'none';
+      };
+
+      // 9. 下载媒体条目
+      function downloadMedia(item) {
+        const a = document.createElement('a');
+        a.href = item.mediaUrl;
+        const ext = item.mediaType === 'video' ? 'mp4' : 'jpg';
+        a.download = `${state.currentTask?.x_screen_name || 'X'}_${item.tweetId || 'media'}_${Date.now()}.${ext}`;
+        a.target = '_blank';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
+
+      function escapeHtml(str) {
+        if (!str) return '';
+        return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      }
+
+      // 键盘上下键支持 (方便桌面预览)
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown' || e.key === 'j') {
+          const next = state.slideElements[state.currentIndex + 1];
+          if (next) next.scrollIntoView({ behavior: 'smooth' });
+        } else if (e.key === 'ArrowUp' || e.key === 'k') {
+          const prev = state.slideElements[state.currentIndex - 1];
+          if (prev) prev.scrollIntoView({ behavior: 'smooth' });
+        } else if (e.key === ' ') {
+          const cur = state.slideElements[state.currentIndex];
+          if (cur) togglePlayState(cur);
+        }
+      });
+
+      init();
+    })();
+  </script>
+</body>
+</html>

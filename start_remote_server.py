@@ -173,9 +173,10 @@ def load_merged_db():
             all_tasks.append(t)
             seen_ids.add(t['id'])
 
-    merged_items = dict(scanned_items)
-    merged_items.update(stored_db.get('items', {}))
+    merged_items = dict(stored_db.get('items', {}))
+    merged_items.update(scanned_items)
 
+    all_tasks = [t for t in all_tasks if (t.get('x_screen_name') or t.get('task_name', '').strip())]
     return {'tasks': all_tasks, 'items': merged_items}
 
 def save_remote_db(data):
@@ -233,10 +234,19 @@ class VideoStreamingHTTPRequestHandler(SimpleHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
 
-        # 根路径自动重定向至控制台
+        # 根路径智能根据设备重定向 (手机自动直达抖音全屏流，电脑进入控制台)
         if path in ('', '/', '/index.html'):
+            user_agent = self.headers.get('User-Agent', '').lower()
+            is_mobile = any(k in user_agent for k in ('mobile', 'android', 'iphone', 'ipad', 'harmony'))
+            target = '/mobile.html' if is_mobile else '/dashboard.html'
             self.send_response(302)
-            self.send_header('Location', '/dashboard.html')
+            self.send_header('Location', target)
+            self.end_headers()
+            return
+
+        if path in ('/mobile', '/douyin'):
+            self.send_response(302)
+            self.send_header('Location', '/mobile.html')
             self.end_headers()
             return
 
@@ -417,26 +427,30 @@ def start_cloudflare_tunnel(port):
 
 def print_banner(lan_ip, port, tunnel_url, scanned_tasks):
     local_url = f"http://{lan_ip}:{port}/"
-    qr_target = tunnel_url if tunnel_url else local_url
+    mobile_local_url = f"http://{lan_ip}:{port}/mobile.html"
+    mobile_tunnel_url = f"{tunnel_url}/mobile.html" if tunnel_url else None
+    qr_target = mobile_tunnel_url if mobile_tunnel_url else mobile_local_url
 
     print("\n" + "=" * 68)
-    print("  🚀 X-Media-Downloader 安卓远程流媒体与公网穿透服务已就绪！")
+    print("  🚀 X-Media-Downloader 手机抖音沉浸模式 & 局域网/公网服务已就绪！")
     print("=" * 68)
 
     if tunnel_url:
-        print("\n  🌐 [方案三：全球公网 HTTPS 直达 (免 Wi-Fi 限制 / 4G/5G 均可随时看)]：")
-        print(f"  🔗 公网地址 : \033[92m{tunnel_url}\033[0m")
+        print("\n  🌐 [方案三：全球公网 HTTPS 直达 (免 Wi-Fi 限制 / 4G/5G 随时刷)]：")
+        print(f"  📱 手机抖音刷片 : \033[92m{mobile_tunnel_url}\033[0m")
+        print(f"  💻 电脑管理看板 : {tunnel_url}/dashboard.html")
     
     print("\n  📶 [方案一：家庭 Wi-Fi 局域网直连]：")
-    print(f"  🔗 局域网地址 : {local_url}")
+    print(f"  📱 手机抖音刷片 : \033[96m{mobile_local_url}\033[0m")
+    print(f"  💻 电脑管理看板 : {local_url}dashboard.html")
 
-    # 尝试打印 ASCII 二维码
+    # 尝试打印 ASCII 二维码 (手机直接扫码打开抖音短视频流)
     try:
         import qrcode
         qr = qrcode.QRCode(border=1)
         qr.add_data(qr_target)
         qr.make(fit=True)
-        print("\n  📱 [手机微信 / 相机扫码直达]：")
+        print("\n  📱 [手机微信 / 相机扫码直达抖音全屏短视频流]：")
         qr.print_ascii(invert=True)
     except Exception:
         pass

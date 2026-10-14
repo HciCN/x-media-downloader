@@ -1202,12 +1202,14 @@
       if (info && info.ip) {
         const input = document.getElementById('remote-ip-input');
         if (input) input.value = info.ip;
-        const targetUrl = `http://${info.ip}:${info.port || 8899}/dashboard.html`;
+        const mobileUrl = `http://${info.ip}:${info.port || 8899}/mobile.html`;
+        const pcUrl = `http://${info.ip}:${info.port || 8899}/dashboard.html`;
         const resBox = document.getElementById('remote-url-result');
-        const linkEl = document.getElementById('remote-url-link');
-        if (linkEl && resBox) {
-          linkEl.href = targetUrl;
-          linkEl.textContent = targetUrl;
+        if (resBox) {
+          resBox.innerHTML = `
+            <div>📱 <strong>手机抖音沉浸刷片 (推荐)</strong>: <a href="${mobileUrl}" target="_blank" style="color:var(--success); font-weight:700; word-break:break-all;">${mobileUrl}</a></div>
+            <div style="margin-top:6px; font-size:12px; color:var(--text-muted);">💻 电脑完整任务看板: <a href="${pcUrl}" target="_blank" style="color:var(--accent); word-break:break-all;">${pcUrl}</a></div>
+          `;
           resBox.style.display = 'block';
         }
       }
@@ -1223,12 +1225,14 @@
         }
         const srv = await detectRemoteServer();
         const port = srv ? (srv.port || 8899) : 8899;
-        const targetUrl = `http://${ip}:${port}/dashboard.html`;
+        const mobileUrl = `http://${ip}:${port}/mobile.html`;
+        const pcUrl = `http://${ip}:${port}/dashboard.html`;
         const resBox = document.getElementById('remote-url-result');
-        const linkEl = document.getElementById('remote-url-link');
-        if (linkEl && resBox) {
-          linkEl.href = targetUrl;
-          linkEl.textContent = targetUrl;
+        if (resBox) {
+          resBox.innerHTML = `
+            <div>📱 <strong>手机抖音沉浸刷片 (推荐)</strong>: <a href="${mobileUrl}" target="_blank" style="color:var(--success); font-weight:700; word-break:break-all;">${mobileUrl}</a></div>
+            <div style="margin-top:6px; font-size:12px; color:var(--text-muted);">💻 电脑完整任务看板: <a href="${pcUrl}" target="_blank" style="color:var(--accent); word-break:break-all;">${pcUrl}</a></div>
+          `;
           resBox.style.display = 'block';
         }
       };
