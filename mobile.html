@@ -445,6 +445,45 @@
       height: 100%;
       object-fit: cover;
       display: block;
+      background: #111;
+    }
+
+    .grid-thumb-video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      pointer-events: none;
+      background: #000;
+    }
+
+    .grid-play-icon {
+      position: absolute;
+      bottom: 6px;
+      left: 6px;
+      width: 22px;
+      height: 22px;
+      background: rgba(0, 0, 0, 0.65);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 9px;
+      pointer-events: none;
+    }
+
+    .avatar-letter-circle {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #1d9bf0, #7928ca);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-weight: 800;
+      font-size: 16px;
     }
 
     .grid-badge {
@@ -697,6 +736,9 @@
       <button class="icon-pill-btn" id="btn-view-mode-toggle">
         <span id="mode-icon">⊞ 宫格</span>
       </button>
+      <a href="/XMediaViewer.apk" download class="icon-pill-btn" style="text-decoration:none; border-color: rgba(29,155,240,0.5); background: rgba(29,155,240,0.2);" title="下载安装安卓专属全屏App (真正100%全屏免浏览器)">
+        <span style="color:#1d9bf0; font-weight:800;">📲 全屏App</span>
+      </a>
       <a href="/dashboard.html" class="icon-pill-btn" style="text-decoration:none;">
         <span>💻 看板</span>
       </a>
@@ -819,11 +861,12 @@
             // 更新顶部博主标题
             const handle = state.currentTask.x_screen_name || 'X_User';
             const name = state.currentTask.x_name || state.currentTask.task_name || handle;
+            const initial = escapeHtml((name[0] || 'X').toUpperCase());
             navName.textContent = `@${handle} (${state.items.length})`;
             if (state.currentTask.x_avatar) {
-              navAvatar.innerHTML = `<img src="${state.currentTask.x_avatar}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;" />`;
+              navAvatar.innerHTML = `<img src="${state.currentTask.x_avatar}" onerror="this.outerHTML='<div class=\\'avatar-letter-circle\\'>${initial}</div>'" style="width:100%; height:100%; border-radius:50%; object-fit:cover;" />`;
             } else {
-              navAvatar.textContent = name[0] || 'X';
+              navAvatar.innerHTML = `<div class="avatar-letter-circle">${initial}</div>`;
             }
 
             renderFeed();
@@ -1195,7 +1238,7 @@
         }
       };
 
-      // 7. 宫格视图逻辑
+      // 7. 宫格视图逻辑 (支持真实视频帧预览 + 播放图标，杜绝黑屏)
       function renderGrid() {
         gridBody.innerHTML = '';
         document.getElementById('grid-total-count').textContent = state.items.length;
@@ -1203,9 +1246,18 @@
         state.items.forEach((item, idx) => {
           const card = document.createElement('div');
           card.className = 'grid-thumb-card' + (idx === state.currentIndex ? ' active' : '');
+          const isVideo = item.mediaType === 'video';
+          const src = item.thumbUrl || item.mediaUrl;
+
           card.innerHTML = `
-            <img class="grid-thumb-img" src="${item.thumbUrl || item.mediaUrl}" loading="lazy" />
-            <span class="grid-badge">${item.mediaType === 'video' ? 'MP4' : 'IMG'}</span>
+            ${isVideo ? `
+              <video class="grid-thumb-video" src="${item.mediaUrl}#t=0.001" preload="metadata" muted playsinline></video>
+              <div class="grid-play-icon">▶</div>
+              <span class="grid-badge">MP4</span>
+            ` : `
+              <img class="grid-thumb-img" src="${src}" loading="lazy" onerror="this.src='/api/avatar_svg?name=IMG'" />
+              <span class="grid-badge">IMG</span>
+            `}
           `;
           card.onclick = () => {
             gridOverlay.style.display = 'none';
@@ -1235,10 +1287,15 @@
           const count = t.media_count || 0;
           const handle = t.x_screen_name || 'X_User';
           const name = t.x_name || t.task_name || handle;
+          const initial = escapeHtml((name[0] || 'X').toUpperCase());
+
+          const avatarContent = t.x_avatar ? 
+            `<img src="${t.x_avatar}" onerror="this.outerHTML='<div class=\\'avatar-letter-circle\\'>${initial}</div>'" style="width:100%;height:100%;border-radius:50%;object-fit:cover;" />` : 
+            `<div class="avatar-letter-circle">${initial}</div>`;
 
           item.innerHTML = `
             <div class="blogger-item-avatar" style="display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700;">
-              ${t.x_avatar ? `<img src="${t.x_avatar}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;" />` : name[0]}
+              ${avatarContent}
             </div>
             <div class="blogger-item-info">
               <div class="blogger-item-name">${escapeHtml(name)} (@${escapeHtml(handle)})</div>

@@ -14,10 +14,11 @@ import socket
 import re
 import json
 import urllib.parse
+import urllib.request
 import threading
 import subprocess
 import time
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 
 # 彻底禁用 Python 字节码缓存生成，避免生成 __pycache__ 导致 Chrome 扩展加载报错
 sys.dont_write_bytecode = True
@@ -67,6 +68,60 @@ def get_windows_download_dir():
     return _curr_dir
 
 DL_DIR = get_windows_download_dir()
+
+_IMAGE_CACHE = {}
+
+def fetch_proxy_image(url):
+    """通过本机网络代理拉取 Twitter/X 图像并缓存，解决手机端直连被屏蔽的问题"""
+    if not url:
+        return None, None
+    if url in _IMAGE_CACHE:
+        return _IMAGE_CACHE[url]
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                'Referer': 'https://x.com/'
+            }
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = resp.read()
+            c_type = resp.headers.get('Content-Type', 'image/jpeg')
+            _IMAGE_CACHE[url] = (data, c_type)
+            if len(_IMAGE_CACHE) > 600:
+                _IMAGE_CACHE.pop(next(iter(_IMAGE_CACHE)))
+            return data, c_type
+    except Exception:
+        return None, None
+
+def generate_avatar_svg(name):
+    """为无头像博主自动生成高质感绚丽彩色首字母矢量头像"""
+    clean = re.sub(r'[^a-zA-Z0-9\u4e00-\u9fa5]', '', name or 'X')
+    char = (clean[0] if clean else 'X').upper()
+    colors = [
+        ('#1d9bf0', '#0a6ab7'),
+        ('#7928ca', '#4c1d95'),
+        ('#ff0080', '#be185d'),
+        ('#f5a623', '#d97706'),
+        ('#10b981', '#047857'),
+        ('#06b6d4', '#0e7490'),
+        ('#ec4899', '#9d174d'),
+        ('#8b5cf6', '#6d28d9'),
+    ]
+    idx = abs(hash(name or 'X')) % len(colors)
+    c1, c2 = colors[idx]
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <defs>
+    <linearGradient id="g_{idx}" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="{c1}"/>
+      <stop offset="100%" stop-color="{c2}"/>
+    </linearGradient>
+  </defs>
+  <rect width="120" height="120" rx="60" fill="url(#g_{idx})"/>
+  <text x="50%" y="54%" font-size="52" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-weight="800" fill="#ffffff" text-anchor="middle" dominant-baseline="middle">{char}</text>
+</svg>"""
+    return svg.encode('utf-8')
 
 def scan_downloaded_media():
     """
@@ -135,7 +190,7 @@ def scan_downloaded_media():
                 'task_name': f'@{blogger} 的媒体库 (本地已下载)',
                 'x_name': blogger,
                 'x_screen_name': blogger,
-                'x_avatar': 'https://abs.twimg.com/favicons/twitter.3.ico',
+                'x_avatar': f'/api/avatar_svg?name={urllib.parse.quote(blogger)}',
                 'status': 'completed',
                 'media_count': len(items),
                 'completed_count': len(items),
@@ -169,12 +224,39 @@ def load_merged_db():
             seen_ids.add(t['id'])
 
     for t in stored_db.get('tasks', []):
+        # 自动补全缺失的博主 handle 与昵称
+        if not t.get('x_screen_name'):
+            m = re.match(r'@?([a-zA-Z0-9_]+)\s*(?:的媒体库|的推文)?', t.get('task_name', ''))
+            if m:
+                t['x_screen_name'] = m.group(1)
+                if not t.get('x_name'):
+                    t['x_name'] = m.group(1)
+        name = t.get('x_name') or t.get('x_screen_name') or 'X'
+        # 头像补全：如果为空或 twitter 默认图标，生成彩色首字母；若为在线推特链接，走本地代理中继
+        if not t.get('x_avatar') or 'twitter.3.ico' in t.get('x_avatar', ''):
+            t['x_avatar'] = f"/api/avatar_svg?name={urllib.parse.quote(name)}"
+        elif t.get('x_avatar', '').startswith('http') and ('twimg.com' in t.get('x_avatar', '') or 'twitter.com' in t.get('x_avatar', '')):
+            t['x_avatar'] = f"/api/proxy_image?url={urllib.parse.quote(t['x_avatar'])}"
+
         if t['id'] not in seen_ids:
             all_tasks.append(t)
             seen_ids.add(t['id'])
 
     merged_items = dict(stored_db.get('items', {}))
     merged_items.update(scanned_items)
+
+    # 针对未离线下载的媒体文件，自动补齐代理地址，确保手机端无需 VPN 也能加载
+    for tid, items in merged_items.items():
+        for item in items:
+            m_url = item.get('mediaUrl', '')
+            t_url = item.get('thumbUrl', '')
+            if m_url.startswith('http') and ('twimg.com' in m_url or 'twitter.com' in m_url):
+                if item.get('mediaType') == 'image':
+                    item['mediaUrl'] = f"/api/proxy_image?url={urllib.parse.quote(m_url)}"
+                else:
+                    item['mediaUrl'] = f"/api/proxy_media?url={urllib.parse.quote(m_url)}"
+            if t_url.startswith('http') and ('twimg.com' in t_url or 'twitter.com' in t_url):
+                item['thumbUrl'] = f"/api/proxy_image?url={urllib.parse.quote(t_url)}"
 
     all_tasks = [t for t in all_tasks if (t.get('x_screen_name') or t.get('task_name', '').strip())]
     return {'tasks': all_tasks, 'items': merged_items}
@@ -281,6 +363,104 @@ class VideoStreamingHTTPRequestHandler(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+
+        # APK 安卓软件安装包下载: /XMediaViewer.apk 或 /app
+        if path in ('/app', '/download_app'):
+            self.send_response(302)
+            self.send_header('Location', '/XMediaViewer.apk')
+            self.end_headers()
+            return
+
+        if path == '/XMediaViewer.apk':
+            apk_path = os.path.join(_curr_dir, 'XMediaViewer.apk')
+            if not os.path.exists(apk_path):
+                # 备用路径寻找
+                alt = os.path.join(os.path.dirname(_curr_dir), 'x-media-app', 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk')
+                if os.path.exists(alt):
+                    apk_path = alt
+            if os.path.exists(apk_path):
+                f_size = os.path.getsize(apk_path)
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/vnd.android.package-archive')
+                self.send_header('Content-Length', str(f_size))
+                self.send_header('Content-Disposition', 'attachment; filename="XMediaViewer.apk"')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                with open(apk_path, 'rb') as f:
+                    shutil.copyfileobj(f, self.wfile, length=64*1024)
+                return
+            else:
+                self.send_error(404, "APK not found")
+                return
+
+        # 矢量彩色首字母头像: /api/avatar_svg?name=...
+        if path == '/api/avatar_svg':
+            qs = urllib.parse.parse_qs(parsed.query)
+            name = qs.get('name', ['X'])[0]
+            svg_data = generate_avatar_svg(name)
+            self.send_response(200)
+            self.send_header('Content-Type', 'image/svg+xml; charset=utf-8')
+            self.send_header('Content-Length', str(len(svg_data)))
+            self.send_header('Cache-Control', 'public, max-age=86400')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(svg_data)
+            return
+
+        # 图像代理中继 (解决手机端无法直连 Twitter pbs.twimg.com 头像与图片的问题)
+        if path == '/api/proxy_image':
+            qs = urllib.parse.parse_qs(parsed.query)
+            target_url = qs.get('url', [''])[0]
+            data, c_type = fetch_proxy_image(target_url)
+            if data:
+                self.send_response(200)
+                self.send_header('Content-Type', c_type or 'image/jpeg')
+                self.send_header('Content-Length', str(len(data)))
+                self.send_header('Cache-Control', 'public, max-age=86400')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            else:
+                svg_data = generate_avatar_svg('X')
+                self.send_response(200)
+                self.send_header('Content-Type', 'image/svg+xml; charset=utf-8')
+                self.send_header('Content-Length', str(len(svg_data)))
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(svg_data)
+                return
+
+        # 视频代理中继 (针对未下载推文视频进行中继)
+        if path == '/api/proxy_media':
+            qs = urllib.parse.parse_qs(parsed.query)
+            target_url = qs.get('url', [''])[0]
+            if not target_url:
+                self.send_error(400, "Missing URL")
+                return
+            try:
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                    'Referer': 'https://x.com/'
+                }
+                range_header = self.headers.get('Range')
+                if range_header:
+                    headers['Range'] = range_header
+
+                req = urllib.request.Request(target_url, headers=headers)
+                with urllib.request.urlopen(req, timeout=12) as resp:
+                    status = getattr(resp, 'status', 200)
+                    self.send_response(status)
+                    for k, v in resp.headers.items():
+                        if k.lower() in ('content-type', 'content-length', 'content-range', 'accept-ranges'):
+                            self.send_header(k, v)
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    shutil.copyfileobj(resp, self.wfile, length=128*1024)
+                return
+            except Exception as e:
+                self.send_error(502, f"Proxy media error: {e}")
+                return
 
         # API: 电脑局域网信息
         if path == '/api/lan_info':
@@ -443,6 +623,9 @@ def print_banner(lan_ip, port, tunnel_url, scanned_tasks):
     print("\n  📶 [方案一：家庭 Wi-Fi 局域网直连]：")
     print(f"  📱 手机抖音刷片 : \033[96m{mobile_local_url}\033[0m")
     print(f"  💻 电脑管理看板 : {local_url}dashboard.html")
+    print(f"  📲 安卓全屏软件 (APK): \033[93m{local_url}XMediaViewer.apk\033[0m")
+    if tunnel_url:
+        print(f"  📲 安卓全屏软件 (公网APK): \033[93m{tunnel_url}/XMediaViewer.apk\033[0m")
 
     # 尝试打印 ASCII 二维码 (手机直接扫码打开抖音短视频流)
     try:
@@ -463,7 +646,7 @@ def print_banner(lan_ip, port, tunnel_url, scanned_tasks):
         print("     ℹ️ 暂未扫描到 X 媒体文件夹，若在控制台新建下载将自动出现在手机端。")
 
     print("\n  💡 使用小贴士：")
-    print("  1. 手机在任意网络（4G/5G或Wi-Fi）下直接访问【公网地址】或【扫描二维码】；")
+    print("  1. 想要【真正100%全屏免浏览器地址栏】：手机直接下载安装上面的【XMediaViewer.apk】！")
     print("  2. 点击博主即可全屏预览所有图片，并流畅播放高码率 MP4（支持进度条拖拽快进）；")
     print("  3. 彻底免去把视频拷贝到手机的繁琐步骤，零占用手机内存！")
     print("\n  （按 Ctrl + C 可随时安全停止服务）")
@@ -476,13 +659,15 @@ def main():
     server = None
     for p in [8899, 18080, 28080, 38080, 8090, 8000]:
         try:
-            server = HTTPServer(('0.0.0.0', p), VideoStreamingHTTPRequestHandler)
+            server = ThreadingHTTPServer(('0.0.0.0', p), VideoStreamingHTTPRequestHandler)
+            server.daemon_threads = True
             break
         except Exception:
             continue
 
     if not server:
-        server = HTTPServer(('0.0.0.0', 0), VideoStreamingHTTPRequestHandler)
+        server = ThreadingHTTPServer(('0.0.0.0', 0), VideoStreamingHTTPRequestHandler)
+        server.daemon_threads = True
 
     actual_port = server.server_port
 
