@@ -293,6 +293,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     return true;
   }
+
+  // 8. 全量同步任务到 Python 局域网远程服务
+  if (type === 'SYNC_ALL_TO_REMOTE') {
+    handleSyncAllToRemote().then(res => sendResponse(res));
+    return true;
+  }
 });
 
 // --- 本地任务数据库持久化逻辑 ---
@@ -343,6 +349,13 @@ async function handleCreateTask(data) {
     if (!index.includes(taskId)) {
       await chrome.storage.local.set({ [STORAGE_KEYS.TASKS_INDEX]: [taskId, ...index] });
     }
+
+    // 自动推送该新任务至 Python 局域网远程服务
+    fetch('http://127.0.0.1:8080/api/sync_task', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task: taskMeta, items: Object.values(itemsMap) })
+    }).catch(() => {});
 
     return { success: true, taskId, count: taskMeta.media_count };
   } catch (err) {
@@ -401,6 +414,35 @@ async function handleDeleteTask(taskId) {
     await chrome.storage.local.set({ [STORAGE_KEYS.TASKS_INDEX]: index });
 
     return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+async function handleSyncAllToRemote() {
+  try {
+    const res = await chrome.storage.local.get([STORAGE_KEYS.TASKS_INDEX]);
+    const index = res[STORAGE_KEYS.TASKS_INDEX] || [];
+    let syncedCount = 0;
+
+    for (const taskId of index) {
+      const tKey = STORAGE_KEYS.TASK_PREFIX + taskId;
+      const iKey = STORAGE_KEYS.ITEMS_PREFIX + taskId;
+      const data = await chrome.storage.local.get([tKey, iKey]);
+      const task = data[tKey];
+      const itemsMap = data[iKey] || {};
+      const items = Object.values(itemsMap);
+
+      if (task) {
+        await fetch('http://127.0.0.1:8080/api/sync_task', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ task, items })
+        }).catch(() => {});
+        syncedCount++;
+      }
+    }
+    return { success: true, count: syncedCount };
   } catch (err) {
     return { success: false, error: err.message };
   }

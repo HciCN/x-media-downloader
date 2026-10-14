@@ -10,7 +10,9 @@
   ],
   "host_permissions": [
     "*://*.twitter.com/*",
-    "*://*.x.com/*"
+    "*://*.x.com/*",
+    "http://127.0.0.1/*",
+    "http://localhost/*"
   ],
   "action": {
     "default_title": "打开 X-Media-Downloader 控制台"

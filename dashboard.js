@@ -150,6 +150,16 @@
 
     if (filtered.length === 0) {
       emptyEl.style.display = 'block';
+      if (!isExtensionContext) {
+        emptyEl.innerHTML = `
+          <div style="font-size:16px; font-weight:700; color:var(--text-main); margin-bottom:8px;">📱 手机端尚未同步到博主任务</div>
+          <div style="font-size:13px; color:var(--text-muted); line-height:1.7; max-width:480px; margin:0 auto;">
+            请在电脑端 Chrome 中点击扩展图标打开 <strong>X-Media-Downloader 控制台</strong>，切换到 <strong>「📱 安卓远程观看」</strong> 页面，点击 <strong>「🔄 一键推送数据至手机服务」</strong>，所有已抓取的博主推文与媒体将瞬间全量同步到手机端！
+          </div>
+        `;
+      } else {
+        emptyEl.textContent = '暂无本地抓取任务。在 X.com 浏览任意博主并点击悬浮窗抓取，数据将自动归档至此处！';
+      }
       return;
     }
     emptyEl.style.display = 'none';
@@ -916,31 +926,26 @@
         if (statusEl) {
           statusEl.style.display = 'block';
           statusEl.style.color = 'var(--text-main)';
-          statusEl.textContent = '⏳ 正在推送任务至手机端服务...';
+          statusEl.textContent = '⏳ 正在全量同步所有博主推文与媒体至手机端服务...';
         }
-        try {
-          if (state.currentTask && state.currentItems && state.currentItems.length > 0) {
-            await fetch('http://127.0.0.1:8080/api/sync_task', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ task: state.currentTask, items: state.currentItems })
-            });
-          }
-          if (state.tasks && state.tasks.length > 0) {
-            await fetch('http://127.0.0.1:8080/api/sync_all', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ tasks: state.tasks })
-            });
-          }
+        if (isExtensionContext) {
+          chrome.runtime.sendMessage({ type: 'SYNC_ALL_TO_REMOTE' }, (res) => {
+            if (res && res.success) {
+              if (statusEl) {
+                statusEl.style.color = 'var(--success)';
+                statusEl.textContent = `✅ 成功全量同步 ${res.count || 0} 个博主任务！手机刷新即可直接流畅观看！`;
+              }
+            } else {
+              if (statusEl) {
+                statusEl.style.color = 'var(--error)';
+                statusEl.textContent = '❌ 同步失败，请先双击运行 start_remote_server.bat 确保服务已启动。';
+              }
+            }
+          });
+        } else {
           if (statusEl) {
-            statusEl.style.color = 'var(--success)';
-            statusEl.textContent = '✅ 推送成功！手机打开浏览器或扫码即可秒速观看！';
-          }
-        } catch (e) {
-          if (statusEl) {
-            statusEl.style.color = 'var(--error)';
-            statusEl.textContent = '❌ 推送失败，请先双击运行 start_remote_server.bat 启动服务。';
+            statusEl.style.color = 'var(--accent)';
+            statusEl.textContent = '提示：请在电脑端 Chrome 扩展控制台中点击此按钮同步数据至手机。';
           }
         }
       };
