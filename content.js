@@ -32,7 +32,10 @@
     },
     capturedItems: new Map(), // key: url -> item
     tweetItemsMap: new Map(), // tweetId -> [items]
+    tweetMetaMap: new Map(),  // tweetId -> { tweetText, createdAt, isRetweet, user }
     selectedIds: new Set(),   // 已勾选的媒体 URL 集合
+    batchCount: 0,            // 已截获批次数
+    viewMode: 'grid',         // 'grid' | 'tweets'
     queryConfig: null,
     headers: {},
     nextCursor: null,
@@ -200,8 +203,14 @@
         <!-- 媒体画廊与细粒度勾选工具栏 -->
         <div class="xmd-gallery-wrap">
           <div class="xmd-section-title" style="display:flex; justify-content:space-between; align-items:center;">
-            <span>媒体预览 (<span id="xmd-gallery-count">0</span>)</span>
-            <span style="font-weight:normal; text-transform:none; cursor:pointer; color:var(--xmd-accent);" id="xmd-btn-toggle-gallery">展开/收起</span>
+            <span>媒体预览 (<span id="xmd-gallery-count">0</span>)<span id="xmd-batch-count-badge" class="xmd-batch-pill" style="display:none;">0 批</span></span>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <select id="xmd-view-mode-select" class="xmd-select" style="padding:2px 8px; font-size:11px; width:auto; height:24px;">
+                <option value="grid">🖼️ 媒体平铺</option>
+                <option value="tweets">💬 推文分组</option>
+              </select>
+              <span style="font-weight:normal; text-transform:none; cursor:pointer; color:var(--xmd-accent);" id="xmd-btn-toggle-gallery">展开/收起</span>
+            </div>
           </div>
 
           <div class="xmd-selection-toolbar" id="xmd-selection-toolbar" style="display:none;">
@@ -214,6 +223,7 @@
           </div>
 
           <div id="xmd-gallery-grid" class="xmd-gallery-grid" style="display:none;"></div>
+          <div id="xmd-tweets-container" class="xmd-tweets-container" style="display:none;"></div>
         </div>
       </div>
     `;
@@ -255,30 +265,27 @@
 
     document.getElementById('xmd-btn-toggle-gallery').onclick = () => {
       const g = document.getElementById('xmd-gallery-grid');
+      const t = document.getElementById('xmd-tweets-container');
       const tb = document.getElementById('xmd-selection-toolbar');
-      const isHidden = g.style.display === 'none';
-      g.style.display = isHidden ? 'grid' : 'none';
+      const isHidden = g.style.display === 'none' && t.style.display === 'none';
+      if (state.viewMode === 'tweets') {
+        t.style.display = isHidden ? 'flex' : 'none';
+        g.style.display = 'none';
+      } else {
+        g.style.display = isHidden ? 'grid' : 'none';
+        t.style.display = 'none';
+      }
       tb.style.display = isHidden ? 'flex' : 'none';
     };
 
+    document.getElementById('xmd-view-mode-select').onchange = (e) => {
+      toggleViewMode(e.target.value);
+    };
+
     // 勾选快捷操作
-    document.getElementById('xmd-btn-select-all').onclick = () => {
-      state.capturedItems.forEach(it => state.selectedIds.add(it.mediaUrl));
-      updateSelectionUI();
-    };
-
-    document.getElementById('xmd-btn-select-none').onclick = () => {
-      state.selectedIds.clear();
-      updateSelectionUI();
-    };
-
-    document.getElementById('xmd-btn-select-invert').onclick = () => {
-      state.capturedItems.forEach(it => {
-        if (state.selectedIds.has(it.mediaUrl)) state.selectedIds.delete(it.mediaUrl);
-        else state.selectedIds.add(it.mediaUrl);
-      });
-      updateSelectionUI();
-    };
+    document.getElementById('xmd-btn-select-all').onclick = selectAll;
+    document.getElementById('xmd-btn-select-none').onclick = selectNone;
+    document.getElementById('xmd-btn-select-invert').onclick = selectInvert;
 
     document.getElementById('xmd-lightbox-close').onclick = closeLightbox;
     lightbox.onclick = (e) => {
@@ -457,9 +464,22 @@
     }
   }
 
+  function showBatchIncrementBubble(count) {
+    const trigger = document.getElementById('xmd-float-trigger');
+    if (!trigger || count <= 0) return;
+    const bubble = document.createElement('div');
+    bubble.className = 'xmd-float-bubble';
+    bubble.textContent = `+${count} 媒体`;
+    trigger.appendChild(bubble);
+    setTimeout(() => bubble.remove(), 2200);
+  }
+
   function addMediaItems(items) {
     const skipRt = document.getElementById('xmd-opt-skip-rt')?.checked ?? true;
     const typeFilter = document.getElementById('xmd-opt-type')?.value ?? 'all';
+
+    const newItems = [];
+    const affectedTweetIds = new Set();
 
     for (const item of items) {
       if (item.tweetId) {
@@ -469,6 +489,15 @@
         const list = state.tweetItemsMap.get(item.tweetId);
         if (!list.some(x => x.mediaUrl === item.mediaUrl)) {
           list.push(item);
+        }
+        if (!state.tweetMetaMap.has(item.tweetId)) {
+          state.tweetMetaMap.set(item.tweetId, {
+            tweetId: item.tweetId,
+            tweetText: item.tweetText,
+            createdAt: item.createdAt,
+            isRetweet: item.isRetweet,
+            user: item.user
+          });
         }
       }
 
@@ -480,7 +509,33 @@
       if (!state.capturedItems.has(key)) {
         state.capturedItems.set(key, item);
         state.selectedIds.add(key); // 新增条目默认勾选
-        appendThumbToGallery(item);
+        newItems.push(item);
+        if (item.tweetId) affectedTweetIds.add(item.tweetId);
+      }
+    }
+
+    if (newItems.length > 0) {
+      state.batchCount++;
+      showBatchIncrementBubble(newItems.length);
+
+      // 高性能批次批量 DOM 挂载 (DocumentFragment)
+      appendBatchToGallery(newItems);
+
+      // 如果有推文分组受影响，更新推文卡片流
+      if (affectedTweetIds.size > 0 && state.viewMode === 'tweets') {
+        updateTweetCards(Array.from(affectedTweetIds));
+      }
+
+      // 更新批次 badge
+      const batchBadge = document.getElementById('xmd-batch-count-badge');
+      if (batchBadge) {
+        batchBadge.style.display = 'inline-block';
+        batchBadge.textContent = `${state.batchCount} 批`;
+      }
+
+      const hintEl = document.getElementById('xmd-status-hint');
+      if (hintEl && !state.isScraping) {
+        hintEl.textContent = `⚡ 触底截获第 ${state.batchCount} 批数据 (+${newItems.length} 媒体) | 累计: ${state.capturedItems.size} 个`;
       }
     }
 
@@ -511,7 +566,7 @@
     if (vidEl) vidEl.textContent = vidCount;
     if (gCount) gCount.textContent = total;
 
-    updateSelectionUI();
+    updateSelectionCounts();
 
     const hasItems = total > 0;
     ['xmd-btn-zip', 'xmd-btn-native-dl', 'xmd-btn-export-txt', 'xmd-btn-archive-task'].forEach(id => {
@@ -520,7 +575,7 @@
     });
   }
 
-  function updateSelectionUI() {
+  function updateSelectionCounts() {
     const selCount = state.selectedIds.size;
     const countEl = document.getElementById('xmd-selected-count');
     if (countEl) countEl.textContent = selCount;
@@ -532,8 +587,9 @@
     if (zipBtn) zipBtn.textContent = `打包所选为 ZIP (${selCount})`;
     if (dlBtn) dlBtn.textContent = `下载所选 (${selCount})`;
     if (txtBtn) txtBtn.textContent = `复制所选直链 (${selCount})`;
+  }
 
-    // 更新各缩略图选中状态
+  function syncAllCheckboxes() {
     document.querySelectorAll('.xmd-thumb-item').forEach(el => {
       const url = el.getAttribute('data-url');
       const cb = el.querySelector('.xmd-thumb-checkbox');
@@ -544,17 +600,38 @@
     });
   }
 
-  function appendThumbToGallery(item) {
-    const grid = document.getElementById('xmd-gallery-grid');
-    if (!grid) return;
+  function selectAll() {
+    for (const url of state.capturedItems.keys()) {
+      state.selectedIds.add(url);
+    }
+    syncAllCheckboxes();
+    updateSelectionCounts();
+  }
 
+  function selectNone() {
+    state.selectedIds.clear();
+    syncAllCheckboxes();
+    updateSelectionCounts();
+  }
+
+  function selectInvert() {
+    for (const url of state.capturedItems.keys()) {
+      if (state.selectedIds.has(url)) state.selectedIds.delete(url);
+      else state.selectedIds.add(url);
+    }
+    syncAllCheckboxes();
+    updateSelectionCounts();
+  }
+
+  function createThumbElement(item) {
     const div = document.createElement('div');
-    div.className = 'xmd-thumb-item selected';
+    const isSelected = state.selectedIds.has(item.mediaUrl);
+    div.className = `xmd-thumb-item ${isSelected ? 'selected' : ''}`;
     div.setAttribute('data-url', item.mediaUrl);
     div.title = `点击在线预览 (${item.mediaType})\n${item.tweetText || ''}`;
 
     div.innerHTML = `
-      <input type="checkbox" class="xmd-thumb-checkbox" checked />
+      <input type="checkbox" class="xmd-thumb-checkbox" ${isSelected ? 'checked' : ''} />
       <img class="xmd-thumb-img" src="${item.thumbUrl || item.mediaUrl}" loading="lazy" />
       <span class="xmd-thumb-badge">${item.mediaType === 'video' ? 'MP4' : 'IMG'}</span>
     `;
@@ -562,13 +639,101 @@
     const cb = div.querySelector('.xmd-thumb-checkbox');
     cb.onclick = (e) => {
       e.stopPropagation();
-      if (cb.checked) state.selectedIds.add(item.mediaUrl);
-      else state.selectedIds.delete(item.mediaUrl);
-      updateSelectionUI();
+      if (cb.checked) {
+        state.selectedIds.add(item.mediaUrl);
+        div.classList.add('selected');
+      } else {
+        state.selectedIds.delete(item.mediaUrl);
+        div.classList.remove('selected');
+      }
+      updateSelectionCounts();
     };
 
-    div.onclick = () => openLightbox(item);
-    grid.appendChild(div);
+    div.onclick = (e) => {
+      if (e.target === cb) return;
+      openLightbox(item);
+    };
+    return div;
+  }
+
+  function appendBatchToGallery(items) {
+    const grid = document.getElementById('xmd-gallery-grid');
+    if (!grid) return;
+    const fragment = document.createDocumentFragment();
+    for (const item of items) {
+      fragment.appendChild(createThumbElement(item));
+    }
+    grid.appendChild(fragment);
+  }
+
+  function updateTweetCards(tweetIds) {
+    const container = document.getElementById('xmd-tweets-container');
+    if (!container) return;
+
+    for (const tweetId of tweetIds) {
+      let card = container.querySelector(`[data-tweet-id="${tweetId}"]`);
+      const items = (state.tweetItemsMap.get(tweetId) || []).filter(it => state.capturedItems.has(it.mediaUrl));
+      if (items.length === 0) {
+        if (card) card.remove();
+        continue;
+      }
+
+      const meta = state.tweetMetaMap.get(tweetId) || {};
+
+      if (!card) {
+        card = document.createElement('div');
+        card.className = 'xmd-tweet-group-card';
+        card.setAttribute('data-tweet-id', tweetId);
+        container.appendChild(card);
+      }
+
+      let dateStr = '';
+      if (meta.createdAt) {
+        try {
+          const d = new Date(meta.createdAt);
+          dateStr = `${d.getMonth() + 1}-${d.getDate()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+        } catch (e) {}
+      }
+
+      card.innerHTML = `
+        <div class="xmd-tweet-group-header">
+          <span>推文 ID: ${tweetId}</span>
+          <span>${dateStr}</span>
+        </div>
+        <div class="xmd-tweet-group-text">${meta.tweetText || '（无推文文本）'}</div>
+        <div class="xmd-tweet-group-grid" id="xmd-tweet-grid-${tweetId}"></div>
+        <div class="xmd-tweet-group-footer">
+          <span>包含 <strong>${items.length}</strong> 个媒体</span>
+          <button class="xmd-tweet-group-dl-btn">一键下载本推媒体 (${items.length})</button>
+        </div>
+      `;
+
+      const gridEl = card.querySelector(`#xmd-tweet-grid-${tweetId}`);
+      for (const it of items) {
+        gridEl.appendChild(createThumbElement(it));
+      }
+
+      card.querySelector('.xmd-tweet-group-dl-btn').onclick = (e) => {
+        e.stopPropagation();
+        items.forEach(it => downloadSingleMedia(it));
+      };
+    }
+  }
+
+  function toggleViewMode(mode) {
+    state.viewMode = mode;
+    const grid = document.getElementById('xmd-gallery-grid');
+    const tweetsCont = document.getElementById('xmd-tweets-container');
+    if (!grid || !tweetsCont) return;
+
+    if (mode === 'tweets') {
+      grid.style.display = 'none';
+      tweetsCont.style.display = 'flex';
+      updateTweetCards(Array.from(state.tweetItemsMap.keys()));
+    } else {
+      tweetsCont.style.display = 'none';
+      grid.style.display = 'grid';
+    }
   }
 
   // 5. 抓取控制主循环
@@ -702,11 +867,18 @@
     state.isPaused = false;
     state.capturedItems.clear();
     state.selectedIds.clear();
+    state.tweetMetaMap.clear();
+    state.batchCount = 0;
     state.nextCursor = null;
     state.pageCount = 0;
 
     const grid = document.getElementById('xmd-gallery-grid');
     if (grid) grid.innerHTML = '';
+    const tweetsCont = document.getElementById('xmd-tweets-container');
+    if (tweetsCont) tweetsCont.innerHTML = '';
+    const batchBadge = document.getElementById('xmd-batch-count-badge');
+    if (batchBadge) batchBadge.style.display = 'none';
+
     const hintEl = document.getElementById('xmd-status-hint');
     if (hintEl) hintEl.textContent = '数据已清空';
 

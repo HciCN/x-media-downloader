@@ -25,6 +25,7 @@
     capturedItems: new Map(),
     tweetItemsMap: new Map(),
     selectedIds: new Set(),
+    batchCount: 0,
     queryConfig: null,
     headers: {},
     nextCursor: null,
@@ -298,6 +299,19 @@
     .xmd-popover-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; background: #202327; cursor: pointer; }
     .xmd-popover-thumb { width: 34px; height: 34px; border-radius: 4px; object-fit: cover; }
     .xmd-popover-all-btn { background: #1d9bf0; color: #fff; border: none; border-radius: 6px; padding: 8px; font-size: 12px; font-weight: 700; cursor: pointer; }
+    .xmd-float-bubble {
+      position: absolute; top: -32px; right: -10px; background: #00ba7c; color: #ffffff;
+      font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 186, 124, 0.5); pointer-events: none;
+      animation: xmdFloatUp 2.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; white-space: nowrap; z-index: 1000000;
+    }
+    @keyframes xmdFloatUp {
+      0% { opacity: 0; transform: translateY(12px) scale(0.8); }
+      15% { opacity: 1; transform: translateY(0) scale(1.08); }
+      25% { transform: translateY(0) scale(1); }
+      75% { opacity: 1; transform: translateY(-12px); }
+      100% { opacity: 0; transform: translateY(-30px) scale(0.85); }
+    }
   `;
 
   function initUI() {
@@ -537,8 +551,20 @@
     if (avatarEl && profile.avatar) { avatarEl.src = profile.avatar; avatarEl.style.display = 'block'; }
   }
 
+  function showBatchIncrementBubble(count) {
+    const trigger = document.getElementById('xmd-float-trigger');
+    if (!trigger || count <= 0) return;
+    const bubble = document.createElement('div');
+    bubble.className = 'xmd-float-bubble';
+    bubble.textContent = `+${count} 媒体`;
+    trigger.appendChild(bubble);
+    setTimeout(() => bubble.remove(), 2200);
+  }
+
   function addMediaItems(items) {
     const typeFilter = document.getElementById('xmd-opt-type')?.value ?? 'all';
+    const newItems = [];
+
     for (const item of items) {
       if (item.tweetId) {
         if (!state.tweetItemsMap.has(item.tweetId)) state.tweetItemsMap.set(item.tweetId, []);
@@ -551,9 +577,21 @@
       if (!state.capturedItems.has(key)) {
         state.capturedItems.set(key, item);
         state.selectedIds.add(key);
-        appendThumb(item);
+        newItems.push(item);
       }
     }
+
+    if (newItems.length > 0) {
+      state.batchCount++;
+      showBatchIncrementBubble(newItems.length);
+      appendBatchToGallery(newItems);
+
+      const hintEl = document.getElementById('xmd-status-hint');
+      if (hintEl && !state.isScraping) {
+        hintEl.textContent = `⚡ 触底截获第 ${state.batchCount} 批数据 (+${newItems.length} 媒体) | 累计: ${state.capturedItems.size} 个`;
+      }
+    }
+
     updateStatsUI();
   }
 
@@ -569,10 +607,10 @@
     const i = document.getElementById('xmd-stat-images'); if (i) i.textContent = imgCount;
     const v = document.getElementById('xmd-stat-videos'); if (v) v.textContent = vidCount;
 
-    updateSelectionUI();
+    updateSelectionCounts();
   }
 
-  function updateSelectionUI() {
+  function updateSelectionCounts() {
     const selCount = state.selectedIds.size;
     const totalCount = state.capturedItems.size;
     const selEl = document.getElementById('xmd-selected-count');
@@ -590,7 +628,9 @@
       bTxt.textContent = selCount > 0 && selCount < totalCount ? `复制/导出所选 (${selCount})` : '复制/导出直链';
       bTxt.disabled = totalCount === 0;
     }
+  }
 
+  function syncCheckboxes() {
     document.querySelectorAll('#xmd-gallery-grid .xmd-thumb-item').forEach(el => {
       const url = el.getAttribute('data-url');
       const cb = el.querySelector('.xmd-thumb-checkbox');
@@ -601,39 +641,50 @@
     });
   }
 
-  function appendThumb(item) {
+  function appendBatchToGallery(items) {
     const grid = document.getElementById('xmd-gallery-grid');
     if (!grid) return;
-    const div = document.createElement('div');
-    div.className = 'xmd-thumb-item xmd-selected';
-    div.setAttribute('data-url', item.mediaUrl);
-    div.innerHTML = `
-      <input type="checkbox" class="xmd-thumb-checkbox" checked />
-      <img src="${item.thumbUrl || item.mediaUrl}" loading="lazy" />
-      <span class="xmd-thumb-badge">${item.mediaType === 'video' ? 'MP4' : 'IMG'}</span>
-    `;
-    const cb = div.querySelector('.xmd-thumb-checkbox');
-    cb.onclick = (e) => {
-      e.stopPropagation();
-      if (cb.checked) {
-        state.selectedIds.add(item.mediaUrl);
-      } else {
-        state.selectedIds.delete(item.mediaUrl);
-      }
-      updateSelectionUI();
-    };
-    div.onclick = () => openLightbox(item);
-    grid.appendChild(div);
+    const fragment = document.createDocumentFragment();
+    for (const item of items) {
+      const div = document.createElement('div');
+      div.className = 'xmd-thumb-item xmd-selected';
+      div.setAttribute('data-url', item.mediaUrl);
+      div.innerHTML = `
+        <input type="checkbox" class="xmd-thumb-checkbox" checked />
+        <img src="${item.thumbUrl || item.mediaUrl}" loading="lazy" />
+        <span class="xmd-thumb-badge">${item.mediaType === 'video' ? 'MP4' : 'IMG'}</span>
+      `;
+      const cb = div.querySelector('.xmd-thumb-checkbox');
+      cb.onclick = (e) => {
+        e.stopPropagation();
+        if (cb.checked) {
+          state.selectedIds.add(item.mediaUrl);
+          div.classList.add('xmd-selected');
+        } else {
+          state.selectedIds.delete(item.mediaUrl);
+          div.classList.remove('xmd-selected');
+        }
+        updateSelectionCounts();
+      };
+      div.onclick = (e) => {
+        if (e.target === cb) return;
+        openLightbox(item);
+      };
+      fragment.appendChild(div);
+    }
+    grid.appendChild(fragment);
   }
 
   function selectAll() {
     for (const url of state.capturedItems.keys()) state.selectedIds.add(url);
-    updateSelectionUI();
+    syncCheckboxes();
+    updateSelectionCounts();
   }
 
   function selectNone() {
     state.selectedIds.clear();
-    updateSelectionUI();
+    syncCheckboxes();
+    updateSelectionCounts();
   }
 
   function selectInvert() {
@@ -641,7 +692,8 @@
       if (state.selectedIds.has(url)) state.selectedIds.delete(url);
       else state.selectedIds.add(url);
     }
-    updateSelectionUI();
+    syncCheckboxes();
+    updateSelectionCounts();
   }
 
   async function startScraping() {
@@ -740,6 +792,7 @@
     state.isScraping = false;
     state.capturedItems.clear();
     state.selectedIds.clear();
+    state.batchCount = 0;
     state.nextCursor = null;
     state.pageCount = 0;
     const grid = document.getElementById('xmd-gallery-grid');
