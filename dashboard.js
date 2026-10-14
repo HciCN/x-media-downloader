@@ -10,6 +10,7 @@
   // 全局页面状态
   const state = {
     currentView: 'tasks', // 'tasks', 'detail', 'settings'
+    viewMode: 'grid', // 'grid', 'tweets'
     tasks: [],
     currentTask: null,
     currentItems: [],
@@ -255,11 +256,110 @@
     document.getElementById('count-failed').textContent = failed;
 
     updateSelectedCountUI();
-    renderMediaWaterfall();
+    renderActiveView();
   }
 
   function updateSelectedCountUI() {
     document.getElementById('selected-items-count').textContent = state.selectedIds.size;
+  }
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function getFilteredItems() {
+    let filtered = state.currentItems;
+    if (state.activeFilter === 'image') filtered = filtered.filter(it => it.mediaType === 'image');
+    else if (state.activeFilter === 'video') filtered = filtered.filter(it => it.mediaType === 'video');
+    else if (state.activeFilter === 'failed') filtered = filtered.filter(it => it.download_status === 'failed');
+    return filtered;
+  }
+
+  function renderActiveView() {
+    const grid = document.getElementById('media-waterfall-grid');
+    const tweetsCont = document.getElementById('tweets-waterfall-container');
+    if (!grid || !tweetsCont) return;
+
+    if (state.viewMode === 'tweets') {
+      grid.style.display = 'none';
+      tweetsCont.style.display = 'flex';
+      renderTweetsWaterfall();
+    } else {
+      tweetsCont.style.display = 'none';
+      grid.style.display = 'grid';
+      renderMediaWaterfall();
+    }
+  }
+
+  function createMediaCardElement(it) {
+    const itemEl = document.createElement('div');
+    itemEl.className = 'gallery-item' + (state.selectedIds.has(it.id) ? ' selected' : '');
+    itemEl.setAttribute('data-id', it.id);
+
+    const isChecked = state.selectedIds.has(it.id);
+    const dotClass = it.download_status === 'completed' ? 'dot-completed' :
+                     it.download_status === 'failed' ? 'dot-failed' : 'dot-pending';
+    const tweetUrl = it.tweetId ? `https://x.com/i/status/${it.tweetId}` : '';
+    const textPreview = escapeHtml(it.tweetText || '');
+    const textDisplay = it.tweetText ? (it.tweetText.slice(0, 36) + (it.tweetText.length > 36 ? '...' : '')) : '查看原推文';
+
+    itemEl.innerHTML = `
+      <input type="checkbox" class="gallery-checkbox" ${isChecked ? 'checked' : ''} />
+      <span class="gallery-status-dot ${dotClass}" title="状态: ${it.download_status || 'pending'}"></span>
+      <img class="gallery-thumb-img" src="${it.thumbUrl || it.mediaUrl}" loading="lazy" />
+      <span class="gallery-badge">${it.mediaType === 'video' ? 'MP4' : 'IMG'}</span>
+      <div class="gallery-item-overlay">
+        <div class="gallery-item-text" title="${textPreview}">${escapeHtml(textDisplay)}</div>
+        <div class="gallery-item-footer">
+          ${tweetUrl ? `<a href="${tweetUrl}" target="_blank" class="gallery-tweet-link" title="在 X 查看原推文">查看原推 ↗</a>` : ''}
+        </div>
+      </div>
+    `;
+
+    // 勾选事件
+    const cb = itemEl.querySelector('.gallery-checkbox');
+    cb.onclick = (e) => {
+      e.stopPropagation();
+      if (cb.checked) {
+        state.selectedIds.add(it.id);
+        itemEl.classList.add('selected');
+      } else {
+        state.selectedIds.delete(it.id);
+        itemEl.classList.remove('selected');
+      }
+      updateSelectedCountUI();
+    };
+
+    // 阻止原推链接冒泡触发 Lightbox
+    const tweetLink = itemEl.querySelector('.gallery-tweet-link');
+    if (tweetLink) {
+      tweetLink.onclick = (e) => {
+        e.stopPropagation();
+      };
+    }
+
+    // 图片加载失败时降级回退到原媒体链接
+    const imgEl = itemEl.querySelector('.gallery-thumb-img');
+    if (imgEl) {
+      imgEl.addEventListener('error', () => {
+        if (imgEl.src !== it.mediaUrl) {
+          imgEl.src = it.mediaUrl;
+        }
+      });
+    }
+
+    // 点击打开 Lightbox 播放/查看
+    itemEl.onclick = () => {
+      openLightbox(it);
+    };
+
+    return itemEl;
   }
 
   // 渲染媒体瀑布流画廊
@@ -267,58 +367,121 @@
     const grid = document.getElementById('media-waterfall-grid');
     grid.innerHTML = '';
 
-    let filtered = state.currentItems;
-    if (state.activeFilter === 'image') filtered = filtered.filter(it => it.mediaType === 'image');
-    else if (state.activeFilter === 'video') filtered = filtered.filter(it => it.mediaType === 'video');
-    else if (state.activeFilter === 'failed') filtered = filtered.filter(it => it.download_status === 'failed');
+    const filtered = getFilteredItems();
+    if (filtered.length === 0) {
+      grid.innerHTML = '<div class="empty-state" style="grid-column: 1 / -1;">当前筛选条件下暂无媒体</div>';
+      return;
+    }
 
     filtered.forEach(it => {
-      const itemEl = document.createElement('div');
-      itemEl.className = 'gallery-item' + (state.selectedIds.has(it.id) ? ' selected' : '');
+      grid.appendChild(createMediaCardElement(it));
+    });
+  }
 
-      const isChecked = state.selectedIds.has(it.id);
-      const dotClass = it.download_status === 'completed' ? 'dot-completed' :
-                       it.download_status === 'failed' ? 'dot-failed' : 'dot-pending';
+  // 渲染推文分组卡片流
+  function renderTweetsWaterfall() {
+    const container = document.getElementById('tweets-waterfall-container');
+    container.innerHTML = '';
 
-      itemEl.innerHTML = `
-        <input type="checkbox" class="gallery-checkbox" ${isChecked ? 'checked' : ''} />
-        <span class="gallery-status-dot ${dotClass}" title="状态: ${it.download_status}"></span>
-        <img class="gallery-thumb-img" src="${it.thumbUrl || it.mediaUrl}" loading="lazy" />
-        <span class="gallery-badge">${it.mediaType === 'video' ? 'MP4' : 'IMG'}</span>
+    const filtered = getFilteredItems();
+    if (filtered.length === 0) {
+      container.innerHTML = '<div class="empty-state">当前筛选条件下暂无推文媒体</div>';
+      return;
+    }
+
+    // 按 tweetId 分组
+    const groups = new Map();
+    for (const item of filtered) {
+      const key = item.tweetId || 'unknown';
+      if (!groups.has(key)) {
+        groups.set(key, []);
+      }
+      groups.get(key).push(item);
+    }
+
+    groups.forEach((items, tweetId) => {
+      const first = items[0] || {};
+      const card = document.createElement('div');
+      card.className = 'dashboard-tweet-card';
+
+      let dateStr = '';
+      if (first.createdAt) {
+        try {
+          const d = new Date(first.createdAt);
+          dateStr = `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+        } catch (e) {}
+      }
+
+      const tweetUrl = tweetId && tweetId !== 'unknown' ? `https://x.com/i/status/${tweetId}` : '';
+
+      card.innerHTML = `
+        <div class="dashboard-tweet-header">
+          <div class="dashboard-tweet-meta">
+            <span style="font-weight:700; color:var(--text-main);">推文 ID: ${tweetId}</span>
+            ${dateStr ? `<span>•</span><span>${dateStr}</span>` : ''}
+          </div>
+          ${tweetUrl ? `
+            <a href="${tweetUrl}" target="_blank" class="dashboard-view-tweet-btn" title="在 X/Twitter 查看原推文">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+              </svg>
+              在 X 查看原推文 ↗
+            </a>
+          ` : ''}
+        </div>
+        ${first.tweetText ? `<div class="dashboard-tweet-body">${escapeHtml(first.tweetText)}</div>` : ''}
+        <div class="dashboard-tweet-media-grid"></div>
+        <div class="dashboard-tweet-footer">
+          <span>包含 <strong>${items.length}</strong> 个媒体</span>
+          <button class="btn btn-secondary btn-download-group" style="padding:4px 10px; font-size:12px;">下载本推媒体 (${items.length})</button>
+        </div>
       `;
 
-      // 勾选事件
-      const cb = itemEl.querySelector('.gallery-checkbox');
-      cb.onclick = (e) => {
-        e.stopPropagation();
-        if (cb.checked) {
-          state.selectedIds.add(it.id);
-          itemEl.classList.add('selected');
-        } else {
-          state.selectedIds.delete(it.id);
-          itemEl.classList.remove('selected');
-        }
-        updateSelectedCountUI();
-      };
+      const mediaGrid = card.querySelector('.dashboard-tweet-media-grid');
+      items.forEach(it => {
+        mediaGrid.appendChild(createMediaCardElement(it));
+      });
 
-      // 点击打开 Lightbox 播放/查看
-      itemEl.onclick = () => {
-        openLightbox(it);
-      };
+      const groupDlBtn = card.querySelector('.btn-download-group');
+      if (groupDlBtn) {
+        groupDlBtn.onclick = () => {
+          const folderName = `X-Media/${state.currentTask?.x_screen_name || 'unknown'}`;
+          chrome.runtime.sendMessage({
+            source: 'XMD_CONTENT',
+            type: 'START_DOWNLOAD_BATCH',
+            payload: {
+              items: items,
+              folderName,
+              concurrency: state.settings.concurrency || 4,
+              taskId: state.currentTask?.id
+            }
+          });
+        };
+      }
 
-      grid.appendChild(itemEl);
+      container.appendChild(card);
     });
   }
 
   // 绑定控制按钮事件
   function bindDetailActions() {
+    // 视图模式切换（平铺画廊 vs 推文卡片流）
+    const viewModeSelect = document.getElementById('dashboard-view-mode');
+    if (viewModeSelect) {
+      viewModeSelect.value = state.viewMode || 'grid';
+      viewModeSelect.onchange = (e) => {
+        state.viewMode = e.target.value;
+        renderActiveView();
+      };
+    }
+
     // 筛选标签
     document.querySelectorAll('.gallery-filters .filter-pill').forEach(btn => {
       btn.onclick = () => {
         document.querySelectorAll('.gallery-filters .filter-pill').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         state.activeFilter = btn.getAttribute('data-filter');
-        renderMediaWaterfall();
+        renderActiveView();
       };
     });
 
@@ -326,13 +489,13 @@
     document.getElementById('btn-select-all').onclick = () => {
       state.currentItems.forEach(it => state.selectedIds.add(it.id));
       updateSelectedCountUI();
-      renderMediaWaterfall();
+      renderActiveView();
     };
 
     document.getElementById('btn-select-none').onclick = () => {
       state.selectedIds.clear();
       updateSelectedCountUI();
-      renderMediaWaterfall();
+      renderActiveView();
     };
 
     document.getElementById('btn-select-invert').onclick = () => {
@@ -341,7 +504,7 @@
         else state.selectedIds.add(it.id);
       });
       updateSelectedCountUI();
-      renderMediaWaterfall();
+      renderActiveView();
     };
 
     // 开始批量下载
@@ -537,6 +700,10 @@
     const box = document.getElementById('xmd-lightbox');
     const container = document.getElementById('lightbox-media-box');
     const dlBtn = document.getElementById('lightbox-dl-btn');
+    const tweetInfo = document.getElementById('lightbox-tweet-info');
+    const tweetTextEl = document.getElementById('lightbox-tweet-text');
+    const tweetBtn = document.getElementById('lightbox-view-tweet-btn');
+
     container.innerHTML = '';
 
     if (item.mediaType === 'video') {
@@ -550,6 +717,22 @@
       img.className = 'xmd-lightbox-media';
       img.src = item.mediaUrl;
       container.appendChild(img);
+    }
+
+    // 原推文文本
+    if (item.tweetText && item.tweetText.trim()) {
+      tweetTextEl.textContent = item.tweetText;
+      tweetInfo.style.display = 'block';
+    } else {
+      tweetInfo.style.display = 'none';
+    }
+
+    // 原推文直接跳转链接
+    if (item.tweetId) {
+      tweetBtn.href = `https://x.com/i/status/${item.tweetId}`;
+      tweetBtn.style.display = 'inline-flex';
+    } else {
+      tweetBtn.style.display = 'none';
     }
 
     dlBtn.onclick = () => {
@@ -566,12 +749,16 @@
   function closeLightbox() {
     const box = document.getElementById('xmd-lightbox');
     const container = document.getElementById('lightbox-media-box');
+    const tweetInfo = document.getElementById('lightbox-tweet-info');
     if (box) {
       box.classList.remove('xmd-active');
       if (container) {
         const v = container.querySelector('video');
         if (v) v.pause();
         container.innerHTML = '';
+      }
+      if (tweetInfo) {
+        tweetInfo.style.display = 'none';
       }
     }
   }

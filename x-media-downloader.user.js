@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         X/Twitter 批量媒体抓取与下载器 (X-Media-Downloader)
 // @namespace    https://xbd.plucker.io/
-// @version      1.2.0
-// @description  一键批量抓取并下载 X/Twitter 博主的高清原图与最高码率 MP4 视频，支持多选媒体批量打包、信息流单推文秒存、多图弹窗选择、悬浮球拖拽、内置视频播放器、自动游标翻页与防风控退避
+// @version      1.3.0
+// @description  一键批量抓取并下载 X/Twitter 博主的高清原图与最高码率 MP4 视频，全量集中于总控制台高清画廊与推文流卡片预览，支持直接跳转原推文、多选媒体批量打包、信息流单推文秒存、多图弹窗选择、悬浮球拖拽、内置视频播放器、自动游标翻页与防风控退避
 // @author       Antigravity
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -408,7 +408,11 @@
       <button class="xmd-lightbox-close" id="xmd-lightbox-close">✕</button>
       <div id="xmd-lightbox-content" style="display:flex; flex-direction:column; align-items:center;">
         <div id="xmd-lightbox-media-container"></div>
-        <button id="xmd-lightbox-dl-btn" class="xmd-btn xmd-btn-primary" style="margin-top:12px; padding:8px 20px;">立即下载</button>
+        <div id="xmd-lightbox-tweet-info" style="display:none; margin-top:12px; max-width:800px; font-size:13px; color:#e7e9ea; text-align:center; background:rgba(0,0,0,0.6); padding:8px 16px; border-radius:6px; line-height:1.4;"></div>
+        <div style="display:flex; gap:12px; margin-top:12px; align-items:center;">
+          <a id="xmd-lightbox-view-tweet" href="#" target="_blank" style="display:none; align-items:center; gap:4px; background:#1d9bf0; color:#fff; text-decoration:none; padding:8px 16px; border-radius:20px; font-size:13px; font-weight:700;">在 X 查看原推文 ↗</a>
+          <button id="xmd-lightbox-dl-btn" class="xmd-btn xmd-btn-primary" style="padding:8px 20px;">立即下载</button>
+        </div>
       </div>
     `;
 
@@ -490,6 +494,8 @@
     const box = document.getElementById('xmd-lightbox');
     const container = document.getElementById('xmd-lightbox-media-container');
     const dlBtn = document.getElementById('xmd-lightbox-dl-btn');
+    const tweetInfo = document.getElementById('xmd-lightbox-tweet-info');
+    const tweetBtn = document.getElementById('xmd-lightbox-view-tweet');
     if (!box || !container) return;
     container.innerHTML = '';
 
@@ -505,6 +511,25 @@
       img.src = item.mediaUrl;
       container.appendChild(img);
     }
+
+    if (tweetInfo) {
+      if (item.tweetText && item.tweetText.trim()) {
+        tweetInfo.textContent = item.tweetText;
+        tweetInfo.style.display = 'block';
+      } else {
+        tweetInfo.style.display = 'none';
+      }
+    }
+
+    if (tweetBtn) {
+      if (item.tweetId) {
+        tweetBtn.href = `https://x.com/i/status/${item.tweetId}`;
+        tweetBtn.style.display = 'inline-flex';
+      } else {
+        tweetBtn.style.display = 'none';
+      }
+    }
+
     dlBtn.onclick = () => downloadSingleMedia(item);
     box.classList.add('xmd-active');
   }
@@ -512,12 +537,16 @@
   function closeLightbox() {
     const box = document.getElementById('xmd-lightbox');
     const container = document.getElementById('xmd-lightbox-media-container');
+    const tweetInfo = document.getElementById('xmd-lightbox-tweet-info');
     if (box) {
       box.classList.remove('xmd-active');
       if (container) {
         const vid = container.querySelector('video');
         if (vid) vid.pause();
         container.innerHTML = '';
+      }
+      if (tweetInfo) {
+        tweetInfo.style.display = 'none';
       }
     }
   }

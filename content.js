@@ -200,30 +200,21 @@
           </button>
         </div>
 
-        <!-- 媒体画廊与细粒度勾选工具栏 -->
-        <div class="xmd-gallery-wrap">
-          <div class="xmd-section-title" style="display:flex; justify-content:space-between; align-items:center;">
-            <span>媒体预览 (<span id="xmd-gallery-count">0</span>)<span id="xmd-batch-count-badge" class="xmd-batch-pill" style="display:none;">0 批</span></span>
-            <div style="display:flex; gap:8px; align-items:center;">
-              <select id="xmd-view-mode-select" class="xmd-select" style="padding:2px 8px; font-size:11px; width:auto; height:24px;">
-                <option value="grid">🖼️ 媒体平铺</option>
-                <option value="tweets">💬 推文分组</option>
-              </select>
-              <span style="font-weight:normal; text-transform:none; cursor:pointer; color:var(--xmd-accent);" id="xmd-btn-toggle-gallery">展开/收起</span>
-            </div>
+        <!-- 总控制台直达看板卡片 (侧边栏预览已完全转入大屏总控制台) -->
+        <div class="xmd-dashboard-portal-card">
+          <div class="xmd-portal-header">
+            <span class="xmd-portal-title">全量媒体大屏与推文直达</span>
+            <span id="xmd-batch-count-badge" class="xmd-batch-pill" style="display:none;">0 批</span>
           </div>
-
-          <div class="xmd-selection-toolbar" id="xmd-selection-toolbar" style="display:none;">
-            <div class="xmd-mini-btn-group">
-              <button class="xmd-mini-btn" id="xmd-btn-select-all">全选</button>
-              <button class="xmd-mini-btn" id="xmd-btn-select-none">全不选</button>
-              <button class="xmd-mini-btn" id="xmd-btn-select-invert">反选</button>
-            </div>
-            <span>已选: <strong id="xmd-selected-count" style="color:var(--xmd-accent);">0</strong> 项</span>
-          </div>
-
-          <div id="xmd-gallery-grid" class="xmd-gallery-grid" style="display:none;"></div>
-          <div id="xmd-tweets-container" class="xmd-tweets-container" style="display:none;"></div>
+          <p class="xmd-portal-desc">
+            为保证页面轻量无卡顿，媒体预览已全部迁移至独立 Web 总控制台。支持大屏画廊、<strong>推文链接直达原推</strong>、断点并发下载与一键打包。
+          </p>
+          <button id="xmd-btn-open-dashboard-card" class="xmd-btn xmd-btn-primary" style="width: 100%; justify-content: center; padding: 10px 14px; margin-top: 6px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/>
+            </svg>
+            进入 Web 总控制台预览与查看原推 (<span id="xmd-portal-count">0</span>) ↗
+          </button>
         </div>
       </div>
     `;
@@ -260,32 +251,12 @@
     };
 
     document.getElementById('xmd-btn-open-dashboard').onclick = () => {
-      chrome.runtime.sendMessage({ type: 'OPEN_DASHBOARD' });
+      archiveTaskToDashboard(true);
     };
 
-    document.getElementById('xmd-btn-toggle-gallery').onclick = () => {
-      const g = document.getElementById('xmd-gallery-grid');
-      const t = document.getElementById('xmd-tweets-container');
-      const tb = document.getElementById('xmd-selection-toolbar');
-      const isHidden = g.style.display === 'none' && t.style.display === 'none';
-      if (state.viewMode === 'tweets') {
-        t.style.display = isHidden ? 'flex' : 'none';
-        g.style.display = 'none';
-      } else {
-        g.style.display = isHidden ? 'grid' : 'none';
-        t.style.display = 'none';
-      }
-      tb.style.display = isHidden ? 'flex' : 'none';
+    document.getElementById('xmd-btn-open-dashboard-card').onclick = () => {
+      archiveTaskToDashboard(true);
     };
-
-    document.getElementById('xmd-view-mode-select').onchange = (e) => {
-      toggleViewMode(e.target.value);
-    };
-
-    // 勾选快捷操作
-    document.getElementById('xmd-btn-select-all').onclick = selectAll;
-    document.getElementById('xmd-btn-select-none').onclick = selectNone;
-    document.getElementById('xmd-btn-select-invert').onclick = selectInvert;
 
     document.getElementById('xmd-lightbox-close').onclick = closeLightbox;
     lightbox.onclick = (e) => {
@@ -518,14 +489,6 @@
       state.batchCount++;
       showBatchIncrementBubble(newItems.length);
 
-      // 高性能批次批量 DOM 挂载 (DocumentFragment)
-      appendBatchToGallery(newItems);
-
-      // 如果有推文分组受影响，更新推文卡片流
-      if (affectedTweetIds.size > 0 && state.viewMode === 'tweets') {
-        updateTweetCards(Array.from(affectedTweetIds));
-      }
-
       // 更新批次 badge
       const batchBadge = document.getElementById('xmd-batch-count-badge');
       if (batchBadge) {
@@ -555,7 +518,7 @@
     const totalEl = document.getElementById('xmd-stat-total');
     const imgEl = document.getElementById('xmd-stat-images');
     const vidEl = document.getElementById('xmd-stat-videos');
-    const gCount = document.getElementById('xmd-gallery-count');
+    const portalCount = document.getElementById('xmd-portal-count');
 
     if (badge) {
       badge.textContent = total > 999 ? '999+' : total;
@@ -564,7 +527,7 @@
     if (totalEl) totalEl.textContent = total;
     if (imgEl) imgEl.textContent = imgCount;
     if (vidEl) vidEl.textContent = vidCount;
-    if (gCount) gCount.textContent = total;
+    if (portalCount) portalCount.textContent = total;
 
     updateSelectionCounts();
 

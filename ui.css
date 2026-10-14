@@ -769,3 +769,35 @@
   color: #fff;
 }
 
+/* 浮动面板总控制台直达卡片 */
+.xmd-dashboard-portal-card {
+  background: var(--xmd-bg-tertiary);
+  border: 1px solid var(--xmd-border);
+  border-radius: var(--xmd-radius-md);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.xmd-portal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.xmd-portal-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--xmd-text-main);
+}
+
+.xmd-portal-desc {
+  font-size: 12px;
+  color: var(--xmd-text-muted);
+  line-height: 1.4;
+  margin: 0;
+}
+
+

@@ -127,18 +127,29 @@
             <button class="filter-pill" data-filter="failed">失败项 (<span id="count-failed">0</span>)</button>
           </div>
 
-          <div class="gallery-select-controls">
-            <button class="btn btn-secondary" id="btn-select-all" style="padding:6px 12px; font-size:12px;">全选</button>
-            <button class="btn btn-secondary" id="btn-select-none" style="padding:6px 12px; font-size:12px;">全不选</button>
-            <button class="btn btn-secondary" id="btn-select-invert" style="padding:6px 12px; font-size:12px;">反选</button>
-            <span style="font-size:13px; color:var(--text-muted); margin-left:8px;">
-              已选: <strong id="selected-items-count" style="color:var(--accent);">0</strong> 项
-            </span>
+          <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+            <select id="dashboard-view-mode" style="background:#202327; color:#e7e9ea; border:1px solid #2f3336; border-radius:6px; padding:6px 10px; font-size:12px; cursor:pointer;">
+              <option value="grid">🖼️ 媒体平铺画廊</option>
+              <option value="tweets">💬 推文分组卡片流</option>
+            </select>
+
+            <div class="gallery-select-controls">
+              <button class="btn btn-secondary" id="btn-select-all" style="padding:6px 12px; font-size:12px;">全选</button>
+              <button class="btn btn-secondary" id="btn-select-none" style="padding:6px 12px; font-size:12px;">全不选</button>
+              <button class="btn btn-secondary" id="btn-select-invert" style="padding:6px 12px; font-size:12px;">反选</button>
+              <span style="font-size:13px; color:var(--text-muted); margin-left:8px;">
+                已选: <strong id="selected-items-count" style="color:var(--accent);">0</strong> 项
+              </span>
+            </div>
           </div>
         </div>
 
         <div class="media-waterfall-grid" id="media-waterfall-grid">
           <!-- 动态渲染单项媒体卡片 -->
+        </div>
+
+        <div class="tweets-waterfall-container" id="tweets-waterfall-container" style="display:none;">
+          <!-- 动态渲染推文分组卡片 -->
         </div>
       </div>
     </section>
@@ -185,7 +196,16 @@
     <button class="xmd-lightbox-close" id="lightbox-close-btn">✕</button>
     <div class="xmd-lightbox-content">
       <div id="lightbox-media-box"></div>
+      <div id="lightbox-tweet-info" class="lightbox-tweet-info" style="display:none;">
+        <div id="lightbox-tweet-text" class="lightbox-tweet-text"></div>
+      </div>
       <div class="xmd-lightbox-bar">
+        <a id="lightbox-view-tweet-btn" href="#" target="_blank" class="xmd-lightbox-btn xmd-lightbox-btn-secondary" style="display:none;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+          </svg>
+          在 X 查看原推文 ↗
+        </a>
         <button class="xmd-lightbox-btn" id="lightbox-dl-btn">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
           下载此文件
