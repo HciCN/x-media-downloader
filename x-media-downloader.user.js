@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         X/Twitter 批量媒体抓取与下载器 (X-Media-Downloader)
 // @namespace    https://xbd.plucker.io/
-// @version      1.3.0
-// @description  一键批量抓取并下载 X/Twitter 博主的高清原图与最高码率 MP4 视频，全量集中于总控制台高清画廊与推文流卡片预览，支持直接跳转原推文、多选媒体批量打包、信息流单推文秒存、多图弹窗选择、悬浮球拖拽、内置视频播放器、自动游标翻页与防风控退避
+// @version      1.4.0
+// @description  一键批量抓取并下载 X/Twitter 博主的高清原图与最高码率 MP4 视频，基于官方 GraphQL 游标分块机制(Chunking)、全量集中于总控制台高清画廊与推文流卡片预览、支持直接跳转原推文、安卓局域网串流/离线手机阅读器、多选媒体批量打包、信息流单推文秒存、多图弹窗选择、悬浮球拖拽、内置视频播放器与防风控退避
 // @author       Antigravity
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -32,7 +32,9 @@
     isScraping: false,
     isPaused: false,
     limitCount: 0,
-    pageCount: 0
+    pageCount: 0,
+    chunkCount: 0,
+    rawTweetCount: 0
   };
 
   function getAdaptiveDelay(page) {
@@ -364,27 +366,30 @@
         </div>
 
         <div style="display:flex; gap:8px;">
-          <select id="xmd-opt-limit" class="xmd-select">
-            <option value="0">全部抓取 (无限制)</option>
-            <option value="50">抓取前 50 条</option>
-            <option value="100">抓取前 100 条</option>
-            <option value="200">抓取前 200 条</option>
+          <select id="xmd-opt-chunk-limit" class="xmd-select" style="flex:1.4;">
+            <option value="1">⚡ 抓取 1 个分块 (1 Chunk / 20条推文)</option>
+            <option value="5">📦 抓取 5 个分块 (5 Chunks / 约100条推文)</option>
+            <option value="10" selected>🚀 抓取 10 个分块 (10 Chunks / 约200条推文)</option>
+            <option value="25">🔥 抓取 25 个分块 (25 Chunks / 约500条推文)</option>
+            <option value="0">♾️ 持续连续分块 (直到时间线终点)</option>
           </select>
-          <select id="xmd-opt-type" class="xmd-select">
+          <select id="xmd-opt-type" class="xmd-select" style="flex:1;">
             <option value="all">图片 + 视频</option>
             <option value="image">仅高清图片</option>
             <option value="video">仅视频 / GIF</option>
           </select>
         </div>
 
-        <div style="display:flex; gap:8px;">
-          <button id="xmd-btn-start" class="xmd-btn xmd-btn-primary">开始批量抓取</button>
+        <div style="display:flex; gap:6px;">
+          <button id="xmd-btn-chunk-step" class="xmd-btn xmd-btn-secondary" style="padding:8px 10px; font-size:12px;">单块步进 (+20推)</button>
+          <button id="xmd-btn-start" class="xmd-btn xmd-btn-primary" style="flex:1;">开始分块抓取 (Chunking)</button>
           <button id="xmd-btn-pause" class="xmd-btn xmd-btn-secondary" disabled>暂停</button>
           <button id="xmd-btn-reset" class="xmd-btn xmd-btn-secondary">重置</button>
         </div>
 
         <div class="xmd-export-grid">
           <button id="xmd-btn-zip" class="xmd-btn xmd-btn-success" disabled>打包所选为 ZIP (0)</button>
+          <button id="xmd-btn-export-mobile" class="xmd-btn" style="background:#00ba7c; color:#fff;" disabled>📱 导出安卓离线单页</button>
           <button id="xmd-btn-export-txt" class="xmd-btn xmd-btn-secondary" disabled>复制/导出直链</button>
         </div>
 
@@ -425,10 +430,12 @@
     document.getElementById('xmd-lightbox-close').onclick = closeLightbox;
     lightbox.onclick = (e) => { if (e.target === lightbox) closeLightbox(); };
 
-    document.getElementById('xmd-btn-start').onclick = startScraping;
+    document.getElementById('xmd-btn-chunk-step').onclick = stepSingleChunk;
+    document.getElementById('xmd-btn-start').onclick = startChunkingLoop;
     document.getElementById('xmd-btn-pause').onclick = togglePause;
     document.getElementById('xmd-btn-reset').onclick = resetData;
     document.getElementById('xmd-btn-zip').onclick = downloadAsZip;
+    document.getElementById('xmd-btn-export-mobile').onclick = exportMobileViewer;
     document.getElementById('xmd-btn-export-txt').onclick = exportTxt;
 
     document.getElementById('xmd-btn-select-all').onclick = selectAll;
@@ -652,6 +659,10 @@
       bZip.textContent = `打包所选为 ZIP (${selCount})`;
       bZip.disabled = selCount === 0;
     }
+    const bMob = document.getElementById('xmd-btn-export-mobile');
+    if (bMob) {
+      bMob.disabled = totalCount === 0;
+    }
     const bTxt = document.getElementById('xmd-btn-export-txt');
     if (bTxt) {
       bTxt.textContent = selCount > 0 && selCount < totalCount ? `复制/导出所选 (${selCount})` : '复制/导出直链';
@@ -725,90 +736,124 @@
     updateSelectionCounts();
   }
 
-  async function startScraping() {
-    if (state.isScraping) return;
-    state.isScraping = true;
-    state.isPaused = false;
-    state.pageCount = 0;
-    state.limitCount = parseInt(document.getElementById('xmd-opt-limit').value) || 0;
-
-    const startBtn = document.getElementById('xmd-btn-start');
-    const pauseBtn = document.getElementById('xmd-btn-pause');
+  // 核心：单次请求拉取 1 个 GraphQL 游标数据块 (Cursor Chunking)
+  async function fetchSingleChunk() {
     const hintEl = document.getElementById('xmd-status-hint');
     const pageEl = document.getElementById('xmd-page-info');
 
-    startBtn.disabled = true;
-    pauseBtn.disabled = false;
-    pauseBtn.textContent = '暂停';
-
     if (!state.queryConfig) {
-      hintEl.textContent = '嗅探接口中，正在平滑滚动...';
-      window.scrollBy({ top: 800, behavior: 'smooth' });
-      await sleep(1500);
+      if (hintEl) hintEl.textContent = '嗅探接口模板中，请稍候...';
+      window.scrollBy({ top: 600, behavior: 'smooth' });
+      await sleep(1200);
     }
 
+    if (!state.queryConfig) {
+      if (hintEl) hintEl.textContent = '未嗅探到接口，尝试滚动激发...';
+      window.scrollBy({ top: 1200, behavior: 'smooth' });
+      await sleep(1500);
+      return { success: false };
+    }
+
+    if (hintEl) hintEl.textContent = `⚡ 正在请求第 ${state.chunkCount + 1} 个游标分块 (Chunk: 20推)...`;
+
+    try {
+      const targetUrl = new URL(state.queryConfig.urlTemplate);
+      const vars = { ...(state.queryConfig.variables || {}), count: 20 };
+      if (state.nextCursor) vars.cursor = state.nextCursor;
+      targetUrl.searchParams.set('variables', JSON.stringify(vars));
+      if (state.queryConfig.features) targetUrl.searchParams.set('features', JSON.stringify(state.queryConfig.features));
+      if (state.queryConfig.fieldToggles) targetUrl.searchParams.set('fieldToggles', JSON.stringify(state.queryConfig.fieldToggles));
+
+      const reqHeaders = {
+        'authorization': 'Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA',
+        'x-twitter-active-user': 'yes',
+        'x-twitter-auth-type': 'OAuth2Session',
+        'x-csrf-token': getCsrfToken(),
+        ...state.headers
+      };
+
+      const res = await origFetch(targetUrl.toString(), { method: 'GET', headers: reqHeaders, credentials: 'include' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const { items, nextCursor, profile } = parseGraphQLTimeline(data);
+      if (profile) updateProfileUI(profile);
+
+      state.chunkCount++;
+      state.rawTweetCount += 20;
+
+      const prevCount = state.capturedItems.size;
+      if (items && items.length > 0) addMediaItems(items);
+      const addedMedia = state.capturedItems.size - prevCount;
+
+      if (pageEl) pageEl.textContent = `第 ${state.chunkCount} 块`;
+      if (hintEl) {
+        hintEl.textContent = `⚡ 第 ${state.chunkCount} 块成功：下发 20 条推文，新增 ${addedMedia} 媒体 (累计: ${state.capturedItems.size} 个)`;
+      }
+
+      const hasNext = Boolean(nextCursor && nextCursor !== state.nextCursor);
+      state.nextCursor = nextCursor;
+      return { success: true, addedMedia, hasNext, nextCursor };
+    } catch (err) {
+      if (hintEl) hintEl.textContent = `分块请求遇阻: ${err.message}，稍后重试...`;
+      window.scrollBy({ top: 1200, behavior: 'smooth' });
+      await sleep(2500);
+      return { success: false, error: err.message };
+    }
+  }
+
+  async function stepSingleChunk() {
+    if (state.isScraping) return;
+    const stepBtn = document.getElementById('xmd-btn-chunk-step');
+    if (stepBtn) stepBtn.disabled = true;
+    try {
+      await fetchSingleChunk();
+    } finally {
+      if (stepBtn) stepBtn.disabled = false;
+    }
+  }
+
+  async function startChunkingLoop() {
+    if (state.isScraping) return;
+    state.isScraping = true;
+    state.isPaused = false;
+
+    const chunkTarget = parseInt(document.getElementById('xmd-opt-chunk-limit')?.value) || 0;
+    const startBtn = document.getElementById('xmd-btn-start');
+    const pauseBtn = document.getElementById('xmd-btn-pause');
+    const stepBtn = document.getElementById('xmd-btn-chunk-step');
+    const hintEl = document.getElementById('xmd-status-hint');
+
+    if (startBtn) startBtn.disabled = true;
+    if (stepBtn) stepBtn.disabled = true;
+    if (pauseBtn) { pauseBtn.disabled = false; pauseBtn.textContent = '暂停'; }
+
+    let iterations = 0;
     while (state.isScraping) {
       if (state.isPaused) { await sleep(500); continue; }
-      state.pageCount++;
-      if (pageEl) pageEl.textContent = `第 ${state.pageCount} 页`;
 
-      if (state.limitCount > 0 && state.capturedItems.size >= state.limitCount) {
-        hintEl.textContent = `已达到目标上限 (${state.limitCount}条)，抓取完成！`;
+      iterations++;
+      const res = await fetchSingleChunk();
+      if (!res.success) { await sleep(3000); continue; }
+
+      if (!res.hasNext) {
+        if (hintEl) hintEl.textContent = `🎉 已抓取至时间线尽头，全部 ${state.chunkCount} 个分块拉取完毕！`;
         break;
       }
 
-      if (state.queryConfig) {
-        hintEl.textContent = `请求第 ${state.pageCount} 页数据...`;
-        const targetUrl = new URL(state.queryConfig.urlTemplate);
-        const vars = { ...(state.queryConfig.variables || {}), count: 20 };
-        if (state.nextCursor) vars.cursor = state.nextCursor;
-        targetUrl.searchParams.set('variables', JSON.stringify(vars));
-        if (state.queryConfig.features) targetUrl.searchParams.set('features', JSON.stringify(state.queryConfig.features));
-        if (state.queryConfig.fieldToggles) targetUrl.searchParams.set('fieldToggles', JSON.stringify(state.queryConfig.fieldToggles));
-
-        const reqHeaders = {
-          'authorization': 'Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA',
-          'x-twitter-active-user': 'yes',
-          'x-twitter-auth-type': 'OAuth2Session',
-          'x-csrf-token': getCsrfToken(),
-          ...state.headers
-        };
-
-        try {
-          const res = await origFetch(targetUrl.toString(), { method: 'GET', headers: reqHeaders, credentials: 'include' });
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          const data = await res.json();
-          const { items, nextCursor, profile } = parseGraphQLTimeline(data);
-          if (profile) updateProfileUI(profile);
-          if (items && items.length > 0) addMediaItems(items);
-
-          if (!nextCursor || nextCursor === state.nextCursor || items.length === 0) {
-            hintEl.textContent = '已抓取至最底部，无更多推文。';
-            break;
-          }
-          state.nextCursor = nextCursor;
-        } catch (err) {
-          hintEl.textContent = `接口限流，切换平滑滚动...`;
-          window.scrollBy({ top: 1200, behavior: 'smooth' });
-          await sleep(2500);
-        }
-      } else {
-        hintEl.textContent = `滚动抓取第 ${state.pageCount} 页...`;
-        window.scrollBy({ top: 1400, behavior: 'smooth' });
-        await sleep(1800);
+      if (chunkTarget > 0 && iterations >= chunkTarget) {
+        if (hintEl) hintEl.textContent = `🎯 已达成指定目标: 推进 ${chunkTarget} 个分块 (约 ${chunkTarget * 20} 条推文)，抓取完成！`;
+        break;
       }
 
-      const delay = getAdaptiveDelay(state.pageCount);
-      hintEl.textContent = `防风控等待 ${(delay / 1000).toFixed(1)}s 后翻页...`;
+      const delay = getAdaptiveDelay(state.chunkCount);
+      if (hintEl) hintEl.textContent = `防风控退避 ${(delay / 1000).toFixed(1)}s 后拉取下 1 块...`;
       await sleep(delay);
     }
 
     state.isScraping = false;
-    startBtn.disabled = false;
-    pauseBtn.disabled = true;
-    if (hintEl.textContent.includes('正在') || hintEl.textContent.includes('等待')) {
-      hintEl.textContent = `抓取结束，共采集 ${state.capturedItems.size} 个媒体文件！`;
-    }
+    if (startBtn) startBtn.disabled = false;
+    if (stepBtn) stepBtn.disabled = false;
+    if (pauseBtn) pauseBtn.disabled = true;
   }
 
   function togglePause() {
@@ -822,11 +867,122 @@
     state.capturedItems.clear();
     state.selectedIds.clear();
     state.batchCount = 0;
+    state.chunkCount = 0;
+    state.rawTweetCount = 0;
     state.nextCursor = null;
     state.pageCount = 0;
     const grid = document.getElementById('xmd-gallery-grid');
     if (grid) grid.innerHTML = '';
+    const pageEl = document.getElementById('xmd-page-info');
+    if (pageEl) pageEl.textContent = '第 0 块';
+    const hintEl = document.getElementById('xmd-status-hint');
+    if (hintEl) hintEl.textContent = '数据已清空，游标已重置';
     updateStatsUI();
+  }
+
+  function exportMobileViewer() {
+    const items = Array.from(state.capturedItems.values());
+    if (items.length === 0) {
+      alert('当前还没有抓取到任何推文媒体。');
+      return;
+    }
+    const handle = state.userProfile.screen_name || 'X_User';
+    const name = state.userProfile.name || handle;
+    const avatar = state.userProfile.avatar || '';
+
+    // 按 tweetId 分组生成推文
+    const tweetMap = new Map();
+    for (const it of items) {
+      const tid = it.tweetId || 'unknown';
+      if (!tweetMap.has(tid)) {
+        tweetMap.set(tid, {
+          tweetId: tid,
+          tweetText: it.tweetText || '',
+          createdAt: it.createdAt || '',
+          user: { name, screen_name: handle, avatar },
+          media: []
+        });
+      }
+      tweetMap.get(tid).media.push(it);
+    }
+
+    const tweetsArray = Array.from(tweetMap.values());
+    const dataJson = JSON.stringify({
+      task: { name, handle, avatar, totalTweets: tweetsArray.length, totalMedia: items.length },
+      tweets: tweetsArray
+    }).replace(/<\/script>/g, '<\\/script>');
+
+    const htmlContent = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>${name} (@${handle}) - X 离线推文阅读器</title>
+  <style>
+    :root { --bg:#000; --card:#16181c; --border:#2f3336; --text:#e7e9ea; --muted:#71767b; --accent:#1d9bf0; }
+    * { box-sizing: border-box; margin:0; padding:0; }
+    body { background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; padding-bottom:50px; }
+    .header { position:sticky; top:0; background:rgba(0,0,0,0.85); backdrop-filter:blur(10px); padding:12px 16px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; z-index:99; }
+    .profile { display:flex; gap:12px; padding:16px; border-bottom:1px solid var(--border); background:var(--card); }
+    .avatar { width:48px; height:48px; border-radius:50%; object-fit:cover; }
+    .tweet-card { padding:14px 16px; border-bottom:1px solid var(--border); display:flex; flex-direction:column; gap:10px; }
+    .tweet-header { display:flex; justify-content:space-between; align-items:center; }
+    .tweet-body { font-size:15px; line-height:1.5; white-space:pre-wrap; word-break:break-word; }
+    .media-grid { display:grid; gap:6px; border-radius:10px; overflow:hidden; }
+    .grid-1 { grid-template-columns:1fr; }
+    .grid-2 { grid-template-columns:1fr 1fr; }
+    .grid-3 { grid-template-columns:1fr 1fr; }
+    .grid-4 { grid-template-columns:1fr 1fr; }
+    .media-img { width:100%; max-height:480px; object-fit:cover; border-radius:6px; display:block; }
+    .media-vid { width:100%; max-height:480px; background:#000; border-radius:6px; display:block; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div style="font-weight:800;">📱 X 离线推文阅读器</div>
+    <div style="font-size:12px; color:#00ba7c; font-weight:700;">● 离线单页</div>
+  </div>
+  <div class="profile">
+    <img class="avatar" src="${avatar}" onerror="this.style.display='none'" />
+    <div>
+      <div style="font-weight:800; font-size:16px;">${name}</div>
+      <div style="color:var(--muted); font-size:13px;">@${handle}</div>
+      <div style="color:var(--muted); font-size:12px; margin-top:6px;">共 ${tweetsArray.length} 条推文 / ${items.length} 个媒体</div>
+    </div>
+  </div>
+  <div id="container"></div>
+  <script>
+    const DATA = ${dataJson};
+    const c = document.getElementById('container');
+    for (const t of DATA.tweets) {
+      const card = document.createElement('div');
+      card.className = 'tweet-card';
+      let mediaHtml = '';
+      if (t.media && t.media.length > 0) {
+        mediaHtml = '<div class="media-grid grid-' + Math.min(4, t.media.length) + '">';
+        for (const m of t.media) {
+          if (m.mediaType === 'video') mediaHtml += '<video class="media-vid" src="' + m.mediaUrl + '" poster="' + (m.thumbUrl || '') + '" controls playsinline preload="metadata"></video>';
+          else mediaHtml += '<img class="media-img" src="' + m.mediaUrl + '" loading="lazy" />';
+        }
+        mediaHtml += '</div>';
+      }
+      card.innerHTML = '<div class="tweet-header"><span style="font-weight:700;">' + (t.user.name || '') + '</span>' + (t.tweetId ? '<a href="https://x.com/i/status/' + t.tweetId + '" target="_blank" style="color:var(--accent);font-size:12px;text-decoration:none;">在 X 查看 ↗</a>' : '') + '</div><div class="tweet-body">' + (t.tweetText || '') + '</div>' + mediaHtml;
+      c.appendChild(card);
+    }
+  </script>
+</body>
+</html>`;
+
+    const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+    const u = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = u;
+    a.download = `X_${handle}_mobile_offline_${Date.now()}.html`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(u);
+    alert(`🎉 移动端离线阅读包生成成功！\n文件: X_${handle}_mobile_offline.html\n发送到安卓手机即可随时打开离线观看！`);
   }
 
   async function downloadAsZip() {

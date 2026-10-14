@@ -30,6 +30,7 @@
     bindSettingsEvents();
     bindDetailActions();
     bindLightboxEvents();
+    bindRemoteHubEvents();
 
     // 检查 URL 是否带 task ID
     const urlParams = new URLSearchParams(window.location.search);
@@ -60,6 +61,7 @@
 
     document.getElementById('tab-btn-tasks').onclick = () => switchView('tasks');
     document.getElementById('tab-btn-detail').onclick = () => switchView('detail');
+    document.getElementById('tab-btn-remote').onclick = () => switchView('remote');
     document.getElementById('tab-btn-settings').onclick = () => switchView('settings');
 
     document.getElementById('detail-back-btn').onclick = () => switchView('tasks');
@@ -85,6 +87,9 @@
       document.getElementById('view-task-detail').classList.add('active');
       document.getElementById('tab-btn-detail').classList.add('active');
       document.getElementById('tab-btn-detail').style.display = 'inline-flex';
+    } else if (viewName === 'remote') {
+      document.getElementById('view-remote').classList.add('active');
+      document.getElementById('tab-btn-remote').classList.add('active');
     } else if (viewName === 'settings') {
       document.getElementById('view-settings').classList.add('active');
       document.getElementById('tab-btn-settings').classList.add('active');
@@ -580,6 +585,10 @@
     // 打包所选为 ZIP
     document.getElementById('btn-export-zip').onclick = downloadSelectedAsZip;
 
+    // 导出安卓移动端离线单页
+    const exportMobileBtn = document.getElementById('btn-export-mobile');
+    if (exportMobileBtn) exportMobileBtn.onclick = exportMobileViewer;
+
     // 导出/复制直链
     document.getElementById('btn-export-txt').onclick = exportSelectedUrlsTxt;
 
@@ -798,6 +807,369 @@
         alert('配置已成功保存！');
       });
     };
+  }
+
+  // =========================================================================
+  // 5. 安卓移动端离线阅读包生成与局域网远程连接
+  // =========================================================================
+  function bindRemoteHubEvents() {
+    const genBtn = document.getElementById('btn-generate-remote-url');
+    if (genBtn) {
+      genBtn.onclick = () => {
+        const ip = (document.getElementById('remote-ip-input')?.value || '').trim();
+        if (!ip) {
+          alert('请先输入电脑在局域网中的 IP 地址（运行 start_remote_server.bat 即可查看）');
+          return;
+        }
+        const port = 8080;
+        const targetUrl = `http://${ip}:${port}/dashboard.html`;
+        const resBox = document.getElementById('remote-url-result');
+        const linkEl = document.getElementById('remote-url-link');
+        if (linkEl && resBox) {
+          linkEl.href = targetUrl;
+          linkEl.textContent = targetUrl;
+          resBox.style.display = 'block';
+        }
+      };
+    }
+  }
+
+  // --- 导出安卓移动端原生体验离线阅读单页 (HTML) ---
+  function exportMobileViewer() {
+    if (!state.currentTask || !state.currentItems || state.currentItems.length === 0) {
+      alert('当前任务中没有可导出的推文媒体。');
+      return;
+    }
+
+    const task = state.currentTask;
+    const items = state.currentItems;
+    const handle = task.x_screen_name || 'X_User';
+    const name = task.x_name || task.task_name || handle;
+    const avatar = task.x_avatar || '';
+    const bio = task.x_description || '';
+
+    // 按 tweetId 分组生成推文数据对象
+    const tweetMap = new Map();
+    for (const it of items) {
+      const tid = it.tweetId || 'unknown';
+      if (!tweetMap.has(tid)) {
+        tweetMap.set(tid, {
+          tweetId: tid,
+          tweetText: it.tweetText || '',
+          createdAt: it.createdAt || '',
+          user: it.user || { name, screen_name: handle, avatar },
+          media: []
+        });
+      }
+      tweetMap.get(tid).media.push({
+        id: it.id,
+        mediaType: it.mediaType,
+        mediaUrl: it.mediaUrl,
+        thumbUrl: it.thumbUrl || it.mediaUrl,
+        filename: `${handle}_${it.tweetId || 'media'}_${(it.id || '').slice(-4)}.${it.mediaType === 'video' ? 'mp4' : 'jpg'}`
+      });
+    }
+
+    const tweetsArray = Array.from(tweetMap.values());
+    const dataJson = JSON.stringify({
+      task: { name, handle, avatar, bio, totalTweets: tweetsArray.length, totalMedia: items.length },
+      tweets: tweetsArray
+    }).replace(/<\/script>/g, '<\\/script>');
+
+    const htmlContent = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>${escapeHtml(name)} (@${escapeHtml(handle)}) - X 离线推文阅读器</title>
+  <style>
+    :root {
+      --bg: #000000;
+      --card-bg: #16181c;
+      --border: #2f3336;
+      --text: #e7e9ea;
+      --text-muted: #71767b;
+      --accent: #1d9bf0;
+      --accent-hover: #1a8cd8;
+      --success: #00ba7c;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      padding-bottom: 60px;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .header {
+      position: sticky;
+      top: 0;
+      background: rgba(0, 0, 0, 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 100;
+    }
+    .profile-card {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      gap: 12px;
+      background: var(--card-bg);
+    }
+    .avatar { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; background: #2f3336; flex-shrink: 0; }
+    .user-name { font-size: 17px; font-weight: 800; }
+    .user-handle { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+    .user-bio { font-size: 14px; color: var(--text); margin-top: 8px; line-height: 1.4; }
+    .stats-row { display: flex; gap: 16px; margin-top: 10px; font-size: 13px; color: var(--text-muted); }
+    .stats-row strong { color: var(--text); }
+    .controls-bar {
+      padding: 10px 16px;
+      background: #111;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .search-input {
+      flex: 1;
+      min-width: 140px;
+      background: #202327;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 6px 14px;
+      color: #fff;
+      font-size: 13px;
+      outline: none;
+    }
+    .filter-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      border-radius: 16px;
+      padding: 5px 12px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .filter-btn.active {
+      background: #fff;
+      color: #000;
+      font-weight: 700;
+      border-color: #fff;
+    }
+    .tweet-card {
+      border-bottom: 1px solid var(--border);
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .tweet-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .tweet-author {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .tweet-author-avatar { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; }
+    .tweet-author-meta { font-size: 13px; }
+    .tweet-author-name { font-weight: 700; color: var(--text); }
+    .tweet-author-handle { color: var(--text-muted); font-size: 12px; }
+    .tweet-link {
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 3px 8px;
+      background: rgba(29, 155, 240, 0.1);
+      border-radius: 4px;
+    }
+    .tweet-body {
+      font-size: 15px;
+      line-height: 1.5;
+      color: var(--text);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .media-grid {
+      display: grid;
+      gap: 6px;
+      border-radius: 12px;
+      overflow: hidden;
+      margin-top: 4px;
+    }
+    .grid-1 { grid-template-columns: 1fr; }
+    .grid-2 { grid-template-columns: 1fr 1fr; }
+    .grid-3 { grid-template-columns: 1fr 1fr; }
+    .grid-4 { grid-template-columns: 1fr 1fr; }
+    .media-item {
+      position: relative;
+      background: #202327;
+      overflow: hidden;
+      border-radius: 8px;
+    }
+    .media-img {
+      width: 100%;
+      height: 100%;
+      max-height: 480px;
+      object-fit: cover;
+      display: block;
+    }
+    .media-video {
+      width: 100%;
+      max-height: 480px;
+      background: #000;
+      border-radius: 8px;
+      display: block;
+    }
+    .tweet-date { font-size: 12px; color: var(--text-muted); }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div style="font-weight:800; font-size:16px;">📱 X 离线推文阅读器</div>
+    <div style="font-size:12px; color:var(--success); font-weight:700;">● 离线就绪</div>
+  </div>
+
+  <div class="profile-card">
+    <img class="avatar" src="${escapeHtml(avatar)}" onerror="this.style.display='none'" />
+    <div style="flex:1;">
+      <div class="user-name">${escapeHtml(name)}</div>
+      <div class="user-handle">@${escapeHtml(handle)}</div>
+      ${bio ? `<div class="user-bio">${escapeHtml(bio)}</div>` : ''}
+      <div class="stats-row">
+        <span>推文: <strong>${tweetsArray.length}</strong></span>
+        <span>媒体: <strong>${items.length}</strong></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="controls-bar">
+    <input type="text" id="searchInput" class="search-input" placeholder="🔍 搜索推文正文内容..." />
+    <button class="filter-btn active" data-filter="all">全部</button>
+    <button class="filter-btn" data-filter="image">图片</button>
+    <button class="filter-btn" data-filter="video">视频</button>
+  </div>
+
+  <div id="tweetsContainer"></div>
+
+  <script>
+    const DATA = ${dataJson};
+    let activeFilter = 'all';
+    let searchQuery = '';
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function render() {
+      const container = document.getElementById('tweetsContainer');
+      container.innerHTML = '';
+
+      let list = DATA.tweets;
+      if (activeFilter === 'image') {
+        list = list.filter(t => t.media.some(m => m.mediaType === 'image'));
+      } else if (activeFilter === 'video') {
+        list = list.filter(t => t.media.some(m => m.mediaType === 'video'));
+      }
+
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        list = list.filter(t => (t.tweetText || '').toLowerCase().includes(q));
+      }
+
+      if (list.length === 0) {
+        container.innerHTML = '<div style="text-align:center; padding:40px; color:#71767b; font-size:14px;">没有匹配的推文</div>';
+        return;
+      }
+
+      for (const t of list) {
+        const card = document.createElement('div');
+        card.className = 'tweet-card';
+
+        const tweetUrl = t.tweetId && t.tweetId !== 'unknown' ? 'https://x.com/i/status/' + t.tweetId : '';
+        const author = t.user || DATA.task;
+
+        let dateStr = '';
+        if (t.createdAt) {
+          try {
+            const d = new Date(t.createdAt);
+            dateStr = (d.getMonth() + 1) + '-' + d.getDate() + ' ' + d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');
+          } catch(e) {}
+        }
+
+        let mediaHtml = '';
+        if (t.media && t.media.length > 0) {
+          const gridClass = 'grid-' + Math.min(4, t.media.length);
+          mediaHtml = '<div class="media-grid ' + gridClass + '">';
+          for (const m of t.media) {
+            if (m.mediaType === 'video') {
+              mediaHtml += '<div class="media-item"><video class="media-video" src="' + m.mediaUrl + '" poster="' + m.thumbUrl + '" controls playsinline preload="metadata"></video></div>';
+            } else {
+              mediaHtml += '<div class="media-item"><img class="media-img" src="' + m.mediaUrl + '" loading="lazy" /></div>';
+            }
+          }
+          mediaHtml += '</div>';
+        }
+
+        card.innerHTML = \`
+          <div class="tweet-header">
+            <div class="tweet-author">
+              <img class="tweet-author-avatar" src="\${escapeHtml(author.avatar || '')}" onerror="this.style.display='none'" />
+              <div class="tweet-author-meta">
+                <span class="tweet-author-name">\${escapeHtml(author.name || DATA.task.name)}</span>
+                <span class="tweet-author-handle">@\${escapeHtml(author.screen_name || DATA.task.handle)}</span>
+              </div>
+            </div>
+            \${tweetUrl ? '<a href="' + tweetUrl + '" target="_blank" class="tweet-link">在 X 查看 ↗</a>' : ''}
+          </div>
+          \${t.tweetText ? '<div class="tweet-body">' + escapeHtml(t.tweetText) + '</div>' : ''}
+          \${mediaHtml}
+          \${dateStr ? '<div class="tweet-date">' + dateStr + '</div>' : ''}
+        \`;
+
+        container.appendChild(card);
+      }
+    }
+
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.onclick = () => {
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        activeFilter = btn.getAttribute('data-filter');
+        render();
+      };
+    });
+
+    document.getElementById('searchInput').oninput = (e) => {
+      searchQuery = e.target.value.trim();
+      render();
+    };
+
+    render();
+  </script>
+</body>
+</html>`;
+
+    const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+    const u = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = u;
+    a.download = `X_${handle}_mobile_offline_${Date.now()}.html`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(u);
+    alert(`🎉 移动端离线阅读包生成成功！\n文件: X_${handle}_mobile_offline.html\n\n你可以直接将此 HTML 文件发送到安卓手机（微信、QQ、数据线拷贝），在手机任何浏览器中直接打开即可离线刷推！`);
   }
 
 })();

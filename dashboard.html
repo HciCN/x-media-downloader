@@ -20,6 +20,7 @@
     <nav class="nav-tabs">
       <button class="nav-tab-btn active" id="tab-btn-tasks">📂 本地任务库</button>
       <button class="nav-tab-btn" id="tab-btn-detail" style="display:none;">📊 任务看板</button>
+      <button class="nav-tab-btn" id="tab-btn-remote">📱 安卓远程观看</button>
       <button class="nav-tab-btn" id="tab-btn-settings">⚙️ 设置中心</button>
     </nav>
 
@@ -112,6 +113,7 @@
           <button class="btn btn-secondary" id="btn-retry-failed">重试失败项</button>
           <button class="btn btn-secondary" id="btn-redownload-all">重新下载全部</button>
           <button class="btn btn-success" id="btn-export-zip">一键打包所选为 ZIP</button>
+          <button class="btn btn-success" id="btn-export-mobile" style="background:#00ba7c; border-color:#00ba7c;">📱 导出安卓离线单页 (HTML)</button>
           <button class="btn btn-secondary" id="btn-export-txt">复制/导出直链 TXT</button>
           <button class="btn btn-danger" id="btn-delete-task" style="margin-left:auto;">删除任务</button>
         </div>
@@ -186,6 +188,77 @@
           <button class="btn btn-primary" id="btn-save-settings" style="padding:12px 28px;">
             保存配置
           </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 视图 4: 安卓移动端远程观看中心 -->
+    <section class="view-section" id="view-remote">
+      <div class="settings-card" style="max-width: 860px;">
+        <h2 style="font-size:22px; font-weight:800; display:flex; align-items:center; gap:8px;">
+          <span>📱 安卓 / 移动端离线远程观看中心</span>
+        </h2>
+        <p style="color:var(--text-muted); font-size:14px; line-height:1.6; margin:0;">
+          已为你探索并实现两种最强方案：无论是不想占用手机存储的<strong>「局域网无线流式观看」</strong>，还是随时随地免电脑断网畅刷的<strong>「独立离线推文阅读包」</strong>，均已完美就绪！
+        </p>
+
+        <!-- 方案 1: 局域网无线流媒体服务 (强烈推荐，免拷文件，即点即播) -->
+        <div style="background:var(--bg-hover); border:1px solid var(--border); border-radius:var(--radius-md); padding:20px; display:flex; flex-direction:column; gap:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="font-size:16px; font-weight:700; color:var(--accent);">
+              🚀 方案一：电脑无线局域网串流 (手机扫码即看，0 占手机内存)
+            </div>
+            <span class="status-badge badge-done">强烈推荐</span>
+          </div>
+          <div style="font-size:13px; color:var(--text-muted); line-height:1.5;">
+            电脑上抓取的高清视频动辄几百 MB 甚至数 GB，将其逐个复制到安卓手机极易造成手机存储告急。通过本功能，电脑直接充当流媒体服务器，手机通过 Wi-Fi 无线秒播！
+          </div>
+          <ol style="font-size:13px; color:var(--text-main); line-height:1.8; margin-left:18px; padding:0;">
+            <li>双击运行插件根目录下的 <code>start_remote_server.bat</code> 启动脚本；</li>
+            <li>确保安卓手机和电脑连接在<strong>同一个家庭 Wi-Fi</strong> 下；</li>
+            <li>在下方输入电脑的局域网 IP（脚本窗口启动时会直接打印显示），生成访问直达链接；</li>
+            <li>在安卓手机浏览器（Chrome / Edge / 夸克 / 自带浏览器）中直接打开链接，视频支持<strong>自由拖动进度条</strong>！</li>
+          </ol>
+
+          <div style="display:flex; gap:12px; align-items:center; margin-top:6px;">
+            <input type="text" id="remote-ip-input" class="settings-input" placeholder="例如: 192.168.1.100" style="width:220px;" />
+            <button class="btn btn-primary" id="btn-generate-remote-url">生成手机访问地址</button>
+          </div>
+          <div id="remote-url-result" style="display:none; margin-top:8px; padding:12px; background:rgba(0,186,124,0.1); border:1px solid rgba(0,186,124,0.3); border-radius:6px; font-size:13px;">
+            手机访问地址: <a id="remote-url-link" href="#" target="_blank" style="color:var(--success); font-weight:700; word-break:break-all;"></a>
+          </div>
+        </div>
+
+        <!-- 方案 2: 独立移动端 HTML 离线阅读包 (无需电脑开机，随身离线携带) -->
+        <div style="background:var(--bg-hover); border:1px solid var(--border); border-radius:var(--radius-md); padding:20px; display:flex; flex-direction:column; gap:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="font-size:16px; font-weight:700; color:var(--success);">
+              📦 方案二：独立安卓离线推文阅读单页 (无需电脑，手机随时离线刷)
+            </div>
+            <span class="status-badge" style="background:rgba(29,155,240,0.2); color:var(--accent);">随身便携</span>
+          </div>
+          <div style="font-size:13px; color:var(--text-muted); line-height:1.5;">
+            前往任务看板点击 <strong>「📱 导出安卓离线单页 (HTML)」</strong>，系统将为你一键生成包含所有推文文本、发推时间、原推链接和高清多图的轻量离线网页单文件。
+          </div>
+          <ul style="font-size:13px; color:var(--text-main); line-height:1.8; margin-left:18px; padding:0;">
+            <li><strong>在线 CDN 秒播模式</strong>：无需把视频文件拷入手机，手机只需打开该 HTML，通过原图和最高码率 MP4 官方 CDN 直链即可高清畅快观看；</li>
+            <li><strong>完全离线模式</strong>：将下载的图片与视频文件（或 ZIP 解压后）与 HTML 放入同一文件夹，手机无网断网也能完整离线浏览；</li>
+            <li><strong>仿官方 App 体验</strong>：深黑沉浸夜间模式、网格拼图、全屏手势缩放、原生播放器与推文关键词快速检索。</li>
+          </ul>
+        </div>
+
+        <!-- 方案 3: 外网远程穿透指南 (出门在外面 4G/5G 也能看) -->
+        <div style="background:var(--bg-hover); border:1px solid var(--border); border-radius:var(--radius-md); padding:20px; display:flex; flex-direction:column; gap:12px;">
+          <div style="font-size:16px; font-weight:700; color:#ffd400;">
+            🌐 方案三：公网异地远程观看 (出门在外，5G 无线访问家里电脑)
+          </div>
+          <div style="font-size:13px; color:var(--text-muted); line-height:1.5;">
+            如果你不在家里（使用蜂窝移动网络），推荐使用以下任一免费工具穿透连接电脑：
+          </div>
+          <ul style="font-size:13px; color:var(--text-main); line-height:1.8; margin-left:18px; padding:0;">
+            <li><strong>Tailscale (强烈推荐)</strong>：电脑和安卓手机分别安装 Tailscale 登录同一账号，直接使用手机浏览器访问电脑的 <code>http://100.x.x.x:8080/dashboard.html</code>；</li>
+            <li><strong>Cloudflare Tunnel (完全免费 HTTPS)</strong>：无需公网 IP，一行命令 <code>cloudflared tunnel --url http://localhost:8080</code> 即可生成一个全球可访问的专属安全域名。</li>
+          </ul>
         </div>
       </div>
     </section>

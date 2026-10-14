@@ -46,6 +46,8 @@
     filterType: 'all',
     skipRetweets: true,
     pageCount: 0,
+    chunkCount: 0,
+    rawTweetCount: 0,
     requestIdSeed: 0
   };
 
@@ -149,36 +151,46 @@
         </div>
 
         <div class="xmd-options-wrap">
-          <div class="xmd-section-title">抓取配置</div>
+          <div class="xmd-section-title" style="display:flex; justify-content:space-between; align-items:center;">
+            <span>GraphQL 游标分块配置 (Cursor Chunking)</span>
+            <span class="xmd-cursor-badge" id="xmd-cursor-badge" title="当前游标状态">游标: 初始</span>
+          </div>
           <div class="xmd-options-row">
-            <select id="xmd-opt-limit" class="xmd-select">
-              <option value="0">抓取全部媒体 (无限制)</option>
-              <option value="50">抓取前 50 条</option>
-              <option value="100">抓取前 100 条</option>
-              <option value="200">抓取前 200 条</option>
+            <select id="xmd-opt-chunk-limit" class="xmd-select" style="flex:1.4;">
+              <option value="1">⚡ 抓取 1 个分块 (1 Chunk / 20条推文)</option>
+              <option value="5">📦 抓取 5 个分块 (5 Chunks / 约100条推文)</option>
+              <option value="10" selected>🚀 抓取 10 个分块 (10 Chunks / 约200条推文)</option>
+              <option value="25">🔥 抓取 25 个分块 (25 Chunks / 约500条推文)</option>
+              <option value="0">♾️ 持续连续分块 (直到时间线终点)</option>
             </select>
-            <select id="xmd-opt-type" class="xmd-select">
+            <select id="xmd-opt-type" class="xmd-select" style="flex:1;">
               <option value="all">图片 + 视频</option>
               <option value="image">仅高清图片</option>
               <option value="video">仅视频 / GIF</option>
             </select>
           </div>
-          <div class="xmd-checkbox-row" style="margin-top: 10px;">
+          <div class="xmd-checkbox-row" style="margin-top: 10px; display:flex; align-items:center;">
             <label class="xmd-checkbox-label">
               <input type="checkbox" id="xmd-opt-skip-rt" checked /> 跳过转推 (RT)
             </label>
-            <label class="xmd-checkbox-label">
-              <input type="checkbox" id="xmd-opt-scroll-mode" /> 模拟滚动兜底
-            </label>
+            <span id="xmd-chunk-stats" class="xmd-chunk-stats">
+              已推进: <strong>0</strong> 块 / 累计推文: <strong>~0</strong>
+            </span>
           </div>
         </div>
 
         <div class="xmd-btn-group">
-          <button id="xmd-btn-start" class="xmd-btn xmd-btn-primary">
+          <button id="xmd-btn-chunk-step" class="xmd-btn-chunk-step" title="单步拉取下 1 个分块 (20条推文) 并推进游标">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M5 13l4 4L19 7"/>
+            </svg>
+            单块步进 (+20推)
+          </button>
+          <button id="xmd-btn-start" class="xmd-btn xmd-btn-primary" style="flex: 2;">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
               <polygon points="5 3 19 12 5 21 5 3"></polygon>
             </svg>
-            开始批量抓取
+            开始分块抓取 (Chunking)
           </button>
           <button id="xmd-btn-pause" class="xmd-btn xmd-btn-secondary" disabled>暂停</button>
           <button id="xmd-btn-reset" class="xmd-btn xmd-btn-danger">清空重置</button>
@@ -266,7 +278,8 @@
       if (e.key === 'Escape') closeLightbox();
     });
 
-    document.getElementById('xmd-btn-start').onclick = startScraping;
+    document.getElementById('xmd-btn-chunk-step').onclick = stepSingleChunk;
+    document.getElementById('xmd-btn-start').onclick = startChunkingLoop;
     document.getElementById('xmd-btn-pause').onclick = togglePause;
     document.getElementById('xmd-btn-reset').onclick = resetData;
 
@@ -699,121 +712,164 @@
     }
   }
 
-  // 5. 抓取控制主循环
-  async function startScraping() {
+  // 5. GraphQL 游标分块核心引擎 (Cursor Chunking Engine)
+  // Twitter 官方接口基于游标分块设计，每次请求默认下发 20 条推文作为一个完整数据包
+  async function fetchSingleChunk() {
+    const hintEl = document.getElementById('xmd-status-hint');
+    const badgeEl = document.getElementById('xmd-cursor-badge');
+    const statsEl = document.getElementById('xmd-chunk-stats');
+    const pageEl = document.getElementById('xmd-page-info');
+
+    if (!state.queryConfig) {
+      if (hintEl) hintEl.textContent = '正在获取 Twitter GraphQL 接口模板，请稍候...';
+      window.scrollBy({ top: 600, behavior: 'smooth' });
+      await sleep(1200);
+    }
+
+    const requestId = ++state.requestIdSeed;
+    const variables = {
+      ...(state.queryConfig?.variables || {}),
+      count: 20
+    };
+    if (state.nextCursor) {
+      variables.cursor = state.nextCursor;
+    }
+
+    if (hintEl) hintEl.textContent = `⚡ 正在请求第 ${state.chunkCount + 1} 个游标分块 (Cursor Chunk: 20条推文)...`;
+
+    const fetchPromise = new Promise((resolve) => {
+      const handler = (ev) => {
+        if (ev.source !== window || !ev.data || ev.data.source !== 'XMD_INJECTED') return;
+        if (ev.data.type === 'EXECUTE_GRAPHQL_FETCH_REPLY' && ev.data.requestId === requestId) {
+          window.removeEventListener('message', handler);
+          resolve(ev.data);
+        }
+      };
+      window.addEventListener('message', handler);
+    });
+
+    window.postMessage({
+      source: 'XMD_CONTENT',
+      type: 'EXECUTE_GRAPHQL_FETCH',
+      requestId,
+      payload: {
+        endpointUrl: state.queryConfig?.urlTemplate,
+        variables,
+        features: state.queryConfig?.features,
+        fieldToggles: state.queryConfig?.fieldToggles
+      }
+    }, '*');
+
+    const reply = await fetchPromise;
+
+    if (reply && reply.success && reply.data) {
+      const { items, nextCursor, profile } = reply.data;
+      if (profile) updateProfileUI(profile);
+
+      state.chunkCount++;
+      state.rawTweetCount += 20;
+
+      const prevCount = state.capturedItems.size;
+      if (items && items.length > 0) {
+        addMediaItems(items);
+      }
+      const addedMedia = state.capturedItems.size - prevCount;
+
+      const cursorShort = nextCursor ? (nextCursor.slice(0, 10) + '...') : '已至终点';
+      if (badgeEl) badgeEl.textContent = `游标: ${cursorShort}`;
+      if (statsEl) statsEl.innerHTML = `已推进: <strong>${state.chunkCount}</strong> 块 / 累计推文: <strong>~${state.rawTweetCount}</strong>`;
+      if (pageEl) pageEl.textContent = `第 ${state.chunkCount} 块`;
+
+      if (hintEl) {
+        hintEl.textContent = `⚡ 第 ${state.chunkCount} 块完成：收到 20 条推文，新增 ${addedMedia} 媒体 (累计: ${state.capturedItems.size} 个)`;
+      }
+
+      const hasNext = Boolean(nextCursor && nextCursor !== state.nextCursor);
+      state.nextCursor = nextCursor;
+      return { success: true, addedMedia, hasNext, nextCursor };
+    } else {
+      if (hintEl) hintEl.textContent = `分块请求响应: ${reply?.error || '等待中'}，尝试微滚激活接口...`;
+      window.scrollBy({ top: 1000, behavior: 'smooth' });
+      await sleep(2000);
+      return { success: false, error: reply?.error };
+    }
+  }
+
+  // 单步拉取 1 个分块 (20条推文)
+  async function stepSingleChunk() {
+    if (state.isScraping) return;
+    const stepBtn = document.getElementById('xmd-btn-chunk-step');
+    if (stepBtn) stepBtn.disabled = true;
+
+    try {
+      await fetchSingleChunk();
+      if (state.capturedItems.size > 0) {
+        archiveTaskToDashboard(false);
+      }
+    } finally {
+      if (stepBtn) stepBtn.disabled = false;
+    }
+  }
+
+  // 连续游标分块流水线 (Chunk Stream)
+  async function startChunkingLoop() {
     if (state.isScraping) return;
 
     state.isScraping = true;
     state.isPaused = false;
-    state.pageCount = 0;
-    state.limitCount = parseInt(document.getElementById('xmd-opt-limit').value) || 0;
-    state.skipRetweets = document.getElementById('xmd-opt-skip-rt').checked;
-    state.filterType = document.getElementById('xmd-opt-type').value;
 
+    const chunkTarget = parseInt(document.getElementById('xmd-opt-chunk-limit')?.value) || 0; // 0 为无限制
     const startBtn = document.getElementById('xmd-btn-start');
     const pauseBtn = document.getElementById('xmd-btn-pause');
+    const stepBtn = document.getElementById('xmd-btn-chunk-step');
     const hintEl = document.getElementById('xmd-status-hint');
-    const pageEl = document.getElementById('xmd-page-info');
 
-    startBtn.disabled = true;
-    pauseBtn.disabled = false;
-    pauseBtn.textContent = '暂停';
-
-    hintEl.textContent = '正在初始化抓取任务...';
-
-    if (!state.queryConfig) {
-      hintEl.textContent = '正在嗅探 Twitter 接口，请稍候...';
-      window.scrollBy({ top: 800, behavior: 'smooth' });
-      await sleep(1500);
+    if (startBtn) startBtn.disabled = true;
+    if (stepBtn) stepBtn.disabled = true;
+    if (pauseBtn) {
+      pauseBtn.disabled = false;
+      pauseBtn.textContent = '暂停';
     }
 
+    let iterations = 0;
     while (state.isScraping) {
       if (state.isPaused) {
         await sleep(500);
         continue;
       }
 
-      state.pageCount++;
-      if (pageEl) pageEl.textContent = `第 ${state.pageCount} 页`;
+      iterations++;
+      const res = await fetchSingleChunk();
 
-      if (state.limitCount > 0 && state.capturedItems.size >= state.limitCount) {
-        hintEl.textContent = `已达到设定上限 (${state.limitCount} 条)，抓取完成！`;
+      if (!res.success) {
+        // 请求遇阻稍作退避
+        await sleep(3000);
+        continue;
+      }
+
+      if (!res.hasNext) {
+        if (hintEl) hintEl.textContent = `🎉 已抓取至时间线尽头，全部 ${state.chunkCount} 个分块拉取完毕！`;
         break;
       }
 
-      const useScrollMode = document.getElementById('xmd-opt-scroll-mode').checked;
-
-      if (!useScrollMode && state.queryConfig) {
-        hintEl.textContent = `正在请求第 ${state.pageCount} 页数据...`;
-
-        const requestId = ++state.requestIdSeed;
-        const variables = {
-          ...(state.queryConfig.variables || {}),
-          count: 20
-        };
-        if (state.nextCursor) {
-          variables.cursor = state.nextCursor;
-        }
-
-        const fetchPromise = new Promise((resolve) => {
-          const handler = (ev) => {
-            if (ev.source !== window || !ev.data || ev.data.source !== 'XMD_INJECTED') return;
-            if (ev.data.type === 'EXECUTE_GRAPHQL_FETCH_REPLY' && ev.data.requestId === requestId) {
-              window.removeEventListener('message', handler);
-              resolve(ev.data);
-            }
-          };
-          window.addEventListener('message', handler);
-        });
-
-        window.postMessage({
-          source: 'XMD_CONTENT',
-          type: 'EXECUTE_GRAPHQL_FETCH',
-          requestId,
-          payload: {
-            endpointUrl: state.queryConfig.urlTemplate,
-            variables,
-            features: state.queryConfig.features,
-            fieldToggles: state.queryConfig.fieldToggles
-          }
-        }, '*');
-
-        const reply = await fetchPromise;
-
-        if (reply.success && reply.data) {
-          const { items, nextCursor, profile } = reply.data;
-          if (profile) updateProfileUI(profile);
-          if (items && items.length > 0) addMediaItems(items);
-
-          if (!nextCursor || nextCursor === state.nextCursor || items.length === 0) {
-            hintEl.textContent = '已抓取至时间线最底部，无更多推文。';
-            break;
-          }
-          state.nextCursor = nextCursor;
-        } else {
-          hintEl.textContent = `接口返回限流: ${reply.error || '等待中'}，切换滚动兜底...`;
-          window.scrollBy({ top: 1200, behavior: 'smooth' });
-          await sleep(2500);
-        }
-      } else {
-        hintEl.textContent = `模拟滚动加载第 ${state.pageCount} 页...`;
-        window.scrollBy({ top: 1400, behavior: 'smooth' });
-        await sleep(1800);
+      if (chunkTarget > 0 && iterations >= chunkTarget) {
+        if (hintEl) hintEl.textContent = `🎯 已达成指定目标: 推进 ${chunkTarget} 个分块 (约 ${chunkTarget * 20} 条推文)，抓取完成！`;
+        break;
       }
 
-      const delay = getAdaptiveDelay(state.pageCount);
-      hintEl.textContent = `防风控等待 ${(delay / 1000).toFixed(1)}s 后加载下一页...`;
+      // 防风控阶梯退避
+      const delay = getAdaptiveDelay(state.chunkCount);
+      if (hintEl) hintEl.textContent = `防风控退避 ${(delay / 1000).toFixed(1)}s 后拉取下 1 块...`;
       await sleep(delay);
     }
 
     state.isScraping = false;
-    startBtn.disabled = false;
-    pauseBtn.disabled = true;
+    if (startBtn) startBtn.disabled = false;
+    if (stepBtn) stepBtn.disabled = false;
+    if (pauseBtn) pauseBtn.disabled = true;
 
-    // 抓取结束自动归档至本地数据库
     if (state.capturedItems.size > 0) {
       archiveTaskToDashboard(false);
-      hintEl.textContent = `抓取完成！共 ${state.capturedItems.size} 个媒体，已归档至总控台！`;
     }
   }
 
@@ -822,7 +878,7 @@
     const pauseBtn = document.getElementById('xmd-btn-pause');
     const hintEl = document.getElementById('xmd-status-hint');
     if (pauseBtn) pauseBtn.textContent = state.isPaused ? '继续' : '暂停';
-    if (hintEl) hintEl.textContent = state.isPaused ? '任务已暂停' : '正在继续抓取...';
+    if (hintEl) hintEl.textContent = state.isPaused ? '游标分块任务已暂停' : '正在继续拉取下一分块...';
   }
 
   function resetData() {
@@ -832,8 +888,17 @@
     state.selectedIds.clear();
     state.tweetMetaMap.clear();
     state.batchCount = 0;
+    state.chunkCount = 0;
+    state.rawTweetCount = 0;
     state.nextCursor = null;
     state.pageCount = 0;
+
+    const badgeEl = document.getElementById('xmd-cursor-badge');
+    if (badgeEl) badgeEl.textContent = '游标: 初始';
+    const statsEl = document.getElementById('xmd-chunk-stats');
+    if (statsEl) statsEl.innerHTML = '已推进: <strong>0</strong> 块 / 累计推文: <strong>~0</strong>';
+    const pageEl = document.getElementById('xmd-page-info');
+    if (pageEl) pageEl.textContent = '第 0 块';
 
     const grid = document.getElementById('xmd-gallery-grid');
     if (grid) grid.innerHTML = '';
@@ -843,9 +908,11 @@
     if (batchBadge) batchBadge.style.display = 'none';
 
     const hintEl = document.getElementById('xmd-status-hint');
-    if (hintEl) hintEl.textContent = '数据已清空';
+    if (hintEl) hintEl.textContent = '数据已清空，游标已重置';
 
     document.getElementById('xmd-btn-start').disabled = false;
+    const stepBtn = document.getElementById('xmd-btn-chunk-step');
+    if (stepBtn) stepBtn.disabled = false;
     document.getElementById('xmd-btn-pause').disabled = true;
     updateStatsUI();
   }

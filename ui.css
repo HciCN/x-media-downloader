@@ -800,4 +800,45 @@
   margin: 0;
 }
 
+/* GraphQL Cursor Chunking 徽标与分块控件 */
+.xmd-cursor-badge {
+  font-size: 11px;
+  font-family: monospace;
+  background: rgba(29, 155, 240, 0.15);
+  color: var(--xmd-accent);
+  border: 1px solid rgba(29, 155, 240, 0.3);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.xmd-chunk-stats {
+  font-size: 11px;
+  color: var(--xmd-accent);
+  margin-left: auto;
+}
+
+.xmd-btn-chunk-step {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--xmd-border);
+  color: var(--xmd-text-main);
+  padding: 8px 12px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s;
+}
+
+.xmd-btn-chunk-step:hover:not(:disabled) {
+  background: rgba(29, 155, 240, 0.18);
+  border-color: var(--xmd-accent);
+  color: var(--xmd-accent);
+}
+
+
 

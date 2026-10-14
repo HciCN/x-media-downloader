@@ -9,3 +9,5 @@ Desktop.ini
 node_modules/
 .vscode/
 .idea/
+__pycache__/
+*.pyc

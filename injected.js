@@ -18,6 +18,50 @@
     tweetsMap: new Map() // tweetId -> { mediaItems, text, user }
   };
 
+  // 尝试从本地存储恢复上一次抓取到的有效 GraphQL 配置与请求头
+  try {
+    const rawCache = localStorage.getItem('__xmd_graphql_cache__');
+    if (rawCache) {
+      const parsed = JSON.parse(rawCache);
+      if (parsed.queryConfigs) Object.assign(capturedContext.queryConfigs, parsed.queryConfigs);
+      if (parsed.headers) Object.assign(capturedContext.headers, parsed.headers);
+      if (parsed.lastProfile) capturedContext.lastProfile = parsed.lastProfile;
+    }
+  } catch (e) {}
+
+  function saveGraphQLCache() {
+    try {
+      localStorage.setItem('__xmd_graphql_cache__', JSON.stringify({
+        queryConfigs: capturedContext.queryConfigs,
+        headers: capturedContext.headers,
+        lastProfile: capturedContext.lastProfile
+      }));
+    } catch (e) {}
+  }
+
+  // 从 DOM 中秒级精准检测当前博主的 rest_id / userId
+  function detectPageUserId() {
+    // 1. 从页面 JSON-LD 标签中提取
+    const ldScripts = document.querySelectorAll('script[type="application/ld+json"]');
+    for (const sc of ldScripts) {
+      try {
+        const data = JSON.parse(sc.textContent);
+        if (data.author?.identifier) return String(data.author.identifier);
+        if (data.mainEntity?.identifier) return String(data.mainEntity.identifier);
+      } catch (e) {}
+    }
+    // 2. 从关注/取消关注按钮 data-testid 提取 (如 data-testid="44196397-follow")
+    const followBtn = document.querySelector('[data-testid$="-follow"], [data-testid$="-unfollow"]');
+    if (followBtn) {
+      const testId = followBtn.getAttribute('data-testid') || '';
+      const match = testId.match(/^(\d+)-(?:un)?follow$/);
+      if (match) return match[1];
+    }
+    // 3. 从上次嗅探到的 profile 提取
+    if (capturedContext.lastProfile?.rest_id) return capturedContext.lastProfile.rest_id;
+    return null;
+  }
+
   // 获取 Cookie 中的 CSRF Token
   function getCsrfToken() {
     const match = document.cookie.match(/(?:^|;\s*)ct0=([^;]+)/);
@@ -302,6 +346,8 @@
             fieldToggles: fieldToggles ? JSON.parse(fieldToggles) : null
           };
 
+          saveGraphQLCache();
+
           window.postMessage({
             source: 'XMD_INJECTED',
             type: 'QUERY_CONFIG_SNIFFED',
@@ -322,7 +368,10 @@
         const clone = response.clone();
         clone.json().then(data => {
           const { items, nextCursor, profile } = parseGraphQLTimeline(data);
-          if (profile) capturedContext.lastProfile = profile;
+          if (profile) {
+            capturedContext.lastProfile = profile;
+            saveGraphQLCache();
+          }
           if (items.length > 0 || nextCursor || profile) {
             window.postMessage({
               source: 'XMD_INJECTED',
@@ -348,10 +397,38 @@
 
     const { type, requestId, payload } = ev.data;
 
-    // 指令 1: 使用主世界 session 和 headers 模拟发送 GraphQL 请求
+    // 指令 1: 使用主世界 session 和 headers 模拟发送 GraphQL 分块请求 (Cursor Chunking)
     if (type === 'EXECUTE_GRAPHQL_FETCH') {
-      const { endpointUrl, variables, features, fieldToggles } = payload;
+      let { endpointUrl, variables, features, fieldToggles } = payload;
       try {
+        // 如果未指定 endpointUrl，尝试从缓存中提取 UserMedia / UserTweets
+        if (!endpointUrl) {
+          const fallbackCfg = capturedContext.queryConfigs['UserMedia'] || capturedContext.queryConfigs['UserTweets'];
+          if (fallbackCfg) {
+            endpointUrl = fallbackCfg.urlTemplate;
+            features = features || fallbackCfg.features;
+            fieldToggles = fieldToggles || fallbackCfg.fieldToggles;
+            variables = { ...(fallbackCfg.variables || {}), ...(variables || {}) };
+          }
+        }
+
+        if (!endpointUrl) {
+          throw new Error('未嗅探到有效 GraphQL 接口模板，请稍候或刷新页面重试');
+        }
+
+        // 自动校验与补全 userId (通过 DOM / JSON-LD 秒级获取)
+        if (!variables.userId || variables.userId === '') {
+          const pageUserId = detectPageUserId();
+          if (pageUserId) {
+            variables.userId = pageUserId;
+          }
+        }
+
+        // 确保单次请求分块大小为官方标准 20 条推文
+        if (!variables.count) {
+          variables.count = 20;
+        }
+
         const targetUrl = new URL(endpointUrl);
         if (variables) targetUrl.searchParams.set('variables', JSON.stringify(variables));
         if (features) targetUrl.searchParams.set('features', JSON.stringify(features));
@@ -403,9 +480,23 @@
     }
   });
 
+  // 广播就绪通知并尝试下发已缓存的配置
   window.postMessage({
     source: 'XMD_INJECTED',
     type: 'INJECTED_READY'
   }, '*');
+
+  const primaryCached = capturedContext.queryConfigs['UserMedia'] || capturedContext.queryConfigs['UserTweets'];
+  if (primaryCached) {
+    window.postMessage({
+      source: 'XMD_INJECTED',
+      type: 'QUERY_CONFIG_SNIFFED',
+      payload: {
+        queryName: primaryCached.queryName,
+        config: primaryCached,
+        headers: capturedContext.headers
+      }
+    }, '*');
+  }
 
 })();
