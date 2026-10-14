@@ -44,13 +44,24 @@
     // 检查 URL 是否带 task ID
     const urlParams = new URLSearchParams(window.location.search);
     const taskId = urlParams.get('id');
+    const tab = urlParams.get('tab');
 
     await loadSettings();
 
+    bindConsoleEvents();
+
     if (taskId) {
       await loadTaskDetail(taskId);
+    } else if (tab === 'tasks') {
+      switchView('tasks');
+    } else if (tab === 'libraries') {
+      switchView('libraries');
+    } else if (tab === 'remote') {
+      switchView('remote');
+    } else if (tab === 'settings') {
+      switchView('settings');
     } else {
-      await loadTaskList();
+      switchView('console');
     }
 
     // 仅在 Chrome 扩展环境下监听来自后台的实时下载进度
@@ -67,13 +78,25 @@
   function bindNavigation() {
     document.getElementById('nav-brand-btn').onclick = (e) => {
       e.preventDefault();
-      switchView('tasks');
+      switchView('console');
     };
+
+    const btnConsole = document.getElementById('tab-btn-console');
+    if (btnConsole) btnConsole.onclick = () => switchView('console');
+
+    const btnLibs = document.getElementById('tab-btn-libraries');
+    if (btnLibs) btnLibs.onclick = () => switchView('libraries');
 
     document.getElementById('tab-btn-tasks').onclick = () => switchView('tasks');
     document.getElementById('tab-btn-detail').onclick = () => switchView('detail');
     document.getElementById('tab-btn-remote').onclick = () => switchView('remote');
     document.getElementById('tab-btn-settings').onclick = () => switchView('settings');
+
+    const btnGotoLibs = document.getElementById('btn-goto-libs');
+    if (btnGotoLibs) btnGotoLibs.onclick = () => switchView('libraries');
+
+    const btnViewAllTasks = document.getElementById('btn-view-all-tasks');
+    if (btnViewAllTasks) btnViewAllTasks.onclick = () => switchView('tasks');
 
     document.getElementById('detail-back-btn').onclick = () => switchView('tasks');
 
@@ -90,7 +113,19 @@
     document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.nav-tab-btn').forEach(el => el.classList.remove('active'));
 
-    if (viewName === 'tasks') {
+    if (viewName === 'console') {
+      const el = document.getElementById('view-console');
+      const btn = document.getElementById('tab-btn-console');
+      if (el) el.classList.add('active');
+      if (btn) btn.classList.add('active');
+      loadServerStats();
+    } else if (viewName === 'libraries') {
+      const el = document.getElementById('view-libraries');
+      const btn = document.getElementById('tab-btn-libraries');
+      if (el) el.classList.add('active');
+      if (btn) btn.classList.add('active');
+      loadLibrariesList();
+    } else if (viewName === 'tasks') {
       document.getElementById('view-task-list').classList.add('active');
       document.getElementById('tab-btn-tasks').classList.add('active');
       loadTaskList();
@@ -104,6 +139,282 @@
     } else if (viewName === 'settings') {
       document.getElementById('view-settings').classList.add('active');
       document.getElementById('tab-btn-settings').classList.add('active');
+    }
+  }
+
+  // =========================================================================
+  // 0. Web 控制总台与媒体库管理逻辑
+  // =========================================================================
+  function bindConsoleEvents() {
+    // 重新扫描全库按钮 (总控页面)
+    const btnConsoleRescan = document.getElementById('btn-console-rescan');
+    if (btnConsoleRescan) {
+      btnConsoleRescan.onclick = async () => {
+        btnConsoleRescan.disabled = true;
+        btnConsoleRescan.textContent = '⏳ 正在扫描全库...';
+        try {
+          await fetch('/api/rescan').then(r => r.json());
+          await loadServerStats();
+        } catch (e) {
+          console.error(e);
+        } finally {
+          btnConsoleRescan.disabled = false;
+          btnConsoleRescan.innerHTML = '<span>🔄 重新扫描全库</span>';
+        }
+      };
+    }
+
+    // 重新扫描全库按钮 (媒体库页面)
+    const btnRescanLibsPage = document.getElementById('btn-rescan-libraries-page');
+    if (btnRescanLibsPage) {
+      btnRescanLibsPage.onclick = async () => {
+        btnRescanLibsPage.disabled = true;
+        btnRescanLibsPage.textContent = '⏳ 正在扫描...';
+        try {
+          await fetch('/api/rescan').then(r => r.json());
+          await loadLibrariesList();
+        } catch (e) {
+          console.error(e);
+        } finally {
+          btnRescanLibsPage.disabled = false;
+          btnRescanLibsPage.textContent = '🔄 立即重新扫描全库';
+        }
+      };
+    }
+
+    // 挂载新文件夹按钮
+    const btnAddLib = document.getElementById('btn-add-library');
+    const inputLib = document.getElementById('input-new-library-path');
+    const statusLib = document.getElementById('add-library-status');
+
+    if (btnAddLib && inputLib) {
+      btnAddLib.onclick = async () => {
+        const pathVal = inputLib.value.trim();
+        if (!pathVal) {
+          alert('请输入或粘贴电脑本地文件夹的完整路径 (如 D:\\Videos)');
+          return;
+        }
+
+        btnAddLib.disabled = true;
+        btnAddLib.textContent = '挂载中...';
+        statusLib.style.display = 'block';
+        statusLib.style.color = 'var(--text-muted)';
+        statusLib.textContent = '正在检测路径并挂载...';
+
+        try {
+          const res = await fetch('/api/libraries/add', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: pathVal })
+          }).then(r => r.json());
+
+          if (res && res.success) {
+            statusLib.style.color = 'var(--success)';
+            statusLib.textContent = `✅ ${res.message || '挂载成功！已自动更新片库'}`;
+            inputLib.value = '';
+            await loadLibrariesList();
+          } else {
+            statusLib.style.color = 'var(--danger)';
+            statusLib.textContent = `❌ ${res.message || '挂载失败，请确认文件夹真实存在'}`;
+          }
+        } catch (e) {
+          statusLib.style.color = 'var(--danger)';
+          statusLib.textContent = `❌ 网络或服务异常: ${e.message}`;
+        } finally {
+          btnAddLib.disabled = false;
+          btnAddLib.textContent = '挂载此文件夹';
+        }
+      };
+    }
+
+    // 复制链接按钮
+    document.querySelectorAll('.btn-copy-url').forEach(btn => {
+      btn.onclick = () => {
+        const targetId = btn.getAttribute('data-target');
+        const input = document.getElementById(targetId);
+        if (input && input.value) {
+          navigator.clipboard.writeText(input.value).then(() => {
+            const old = btn.textContent;
+            btn.textContent = '已复制!';
+            btn.style.color = 'var(--success)';
+            setTimeout(() => {
+              btn.textContent = old;
+              btn.style.color = '';
+            }, 2000);
+          });
+        }
+      };
+    });
+  }
+
+  async function loadServerStats() {
+    try {
+      const res = await fetch('/api/server_stats').then(r => r.json());
+      if (res && res.success) {
+        document.getElementById('console-task-count').textContent = res.task_count || 0;
+        document.getElementById('console-video-count').textContent = res.video_count || 0;
+        document.getElementById('console-image-count').textContent = res.image_count || 0;
+        document.getElementById('console-lib-count').textContent = res.library_count || 0;
+
+        // 局域网地址
+        const lanInput = document.getElementById('console-lan-url');
+        const lanOpen = document.getElementById('console-lan-open');
+        if (lanInput) lanInput.value = res.mobile_url || '';
+        if (lanOpen) lanOpen.href = res.mobile_url || '#';
+
+        // 公网隧道
+        const tunnelRow = document.getElementById('console-tunnel-row');
+        const tunnelInput = document.getElementById('console-tunnel-url');
+        const tunnelOpen = document.getElementById('console-tunnel-open');
+        if (res.tunnel_mobile_url) {
+          if (tunnelRow) tunnelRow.style.display = 'flex';
+          if (tunnelInput) tunnelInput.value = res.tunnel_mobile_url;
+          if (tunnelOpen) tunnelOpen.href = res.tunnel_mobile_url;
+        } else {
+          if (tunnelRow) tunnelRow.style.display = 'none';
+        }
+
+        // 动态二维码
+        const qrImg = document.getElementById('console-qr-img');
+        const qrUrl = res.tunnel_mobile_url || res.mobile_url;
+        if (qrImg && qrUrl) {
+          qrImg.src = `/api/qrcode?url=${encodeURIComponent(qrUrl)}&_t=${Date.now()}`;
+        }
+
+        // 加载近期博主列表
+        renderConsoleRecentTasks();
+      }
+    } catch (e) {
+      console.warn('获取服务器状态失败:', e);
+    }
+  }
+
+  async function renderConsoleRecentTasks() {
+    const container = document.getElementById('console-recent-grid');
+    if (!container) return;
+
+    try {
+      const res = await fetch('/api/tasks').then(r => r.json());
+      if (res && res.success && res.tasks) {
+        state.tasks = res.tasks;
+        container.innerHTML = '';
+        const recent = res.tasks.slice(0, 6);
+        if (recent.length === 0) {
+          container.innerHTML = '<div style="color:var(--text-muted); font-size:13px; grid-column:1/-1;">暂未扫描到媒体合集，请在媒体库管理中挂载本地文件夹。</div>';
+          return;
+        }
+
+        for (const task of recent) {
+          const card = document.createElement('div');
+          card.className = 'task-card';
+          card.onclick = () => {
+            loadTaskDetail(task.id);
+            switchView('detail');
+          };
+
+          const handle = task.x_screen_name || 'X_User';
+          const name = task.x_name || task.task_name || handle;
+          const initial = escapeHtml((name[0] || 'X').toUpperCase());
+          const avatarHtml = task.x_avatar
+            ? `<img class="task-card-avatar" src="${task.x_avatar}" onerror="this.outerHTML='<div class=\\'task-card-avatar avatar-placeholder\\'>${initial}</div>'" />`
+            : `<div class="task-card-avatar avatar-placeholder">${initial}</div>`;
+
+          card.innerHTML = `
+            <div class="task-card-header">
+              ${avatarHtml}
+              <div class="task-card-info">
+                <div class="task-card-name" title="${escapeHtml(name)}">${escapeHtml(name)}</div>
+                <div class="task-card-handle">@${escapeHtml(handle)}</div>
+              </div>
+              <span class="status-badge badge-done">${task.media_count || 0} 媒体</span>
+            </div>
+            <div style="font-size:12px; color:var(--text-muted); margin-top:8px; display:flex; justify-content:space-between;">
+              <span>本地已归档</span>
+              <span style="color:var(--accent);">点击在线看 →</span>
+            </div>
+          `;
+          container.appendChild(card);
+        }
+      }
+    } catch (e) {}
+  }
+
+  async function loadLibrariesList() {
+    const container = document.getElementById('libraries-container');
+    const badge = document.getElementById('library-count-badge');
+    if (!container) return;
+
+    container.innerHTML = '<div style="color:var(--text-muted); font-size:13px;">正在加载媒体库列表...</div>';
+
+    try {
+      const res = await fetch('/api/libraries').then(r => r.json());
+      if (res && res.success && res.libraries) {
+        const libs = res.libraries;
+        if (badge) badge.textContent = libs.length;
+        container.innerHTML = '';
+
+        if (libs.length === 0) {
+          container.innerHTML = '<div style="color:var(--text-muted); font-size:13px;">暂未挂载任何文件夹。</div>';
+          return;
+        }
+
+        libs.forEach((item) => {
+          const row = document.createElement('div');
+          row.className = 'library-row-card';
+
+          const statusBadge = item.exists
+            ? `<span class="status-badge badge-done">🟢 正常已连接</span>`
+            : `<span class="status-badge" style="background:rgba(249,24,128,0.2); color:var(--danger);">⚠️ 路径不存在</span>`;
+
+          const typeTag = item.is_default
+            ? `<span style="font-size:11px; background:rgba(29,155,240,0.15); color:var(--accent); padding:2px 8px; border-radius:10px; font-weight:700;">系统默认下载库</span>`
+            : `<span style="font-size:11px; background:rgba(168,85,247,0.15); color:#a855f7; padding:2px 8px; border-radius:10px; font-weight:700;">自定义挂载库</span>`;
+
+          row.innerHTML = `
+            <div style="display:flex; flex-direction:column; gap:6px; flex:1; min-width:0;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:16px;">📁</span>
+                <span class="library-path-text">${escapeHtml(item.path)}</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:8px;">
+                ${statusBadge}
+                ${typeTag}
+              </div>
+            </div>
+            <div>
+              ${item.is_default ? '' : `
+                <button class="btn btn-danger btn-remove-lib" style="padding:6px 12px; font-size:12px;">
+                  🗑️ 移除
+                </button>
+              `}
+            </div>
+          `;
+
+          const removeBtn = row.querySelector('.btn-remove-lib');
+          if (removeBtn) {
+            removeBtn.onclick = async () => {
+              if (confirm(`确定要从片库中移除目录：\n${item.path}\n(仅移除挂载映射，不会删除您硬盘里的任何真实文件)？`)) {
+                removeBtn.disabled = true;
+                removeBtn.textContent = '移除中...';
+                try {
+                  await fetch('/api/libraries/remove', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: item.path })
+                  });
+                  await loadLibrariesList();
+                } catch (e) {
+                  alert('移除失败: ' + e.message);
+                }
+              }
+            };
+          }
+
+          container.appendChild(row);
+        });
+      }
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger); font-size:13px;">加载媒体库失败: ${e.message}</div>`;
     }
   }
 

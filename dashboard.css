@@ -1056,3 +1056,75 @@ video.xmd-gallery-media {
 .settings-input:focus {
   border-color: var(--accent);
 }
+
+/* ========================================================================= */
+/* --- Web 控制总台专属样式 --- */
+/* ========================================================================= */
+.console-hero-header {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 28px;
+}
+
+.console-hero-grid {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 20px;
+}
+
+.console-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+}
+
+.console-info-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.console-info-label {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.console-link-box {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.library-row-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin-bottom: 12px;
+  gap: 16px;
+  transition: all 0.15s ease;
+}
+
+.library-row-card:hover {
+  border-color: rgba(29, 155, 240, 0.4);
+}
+
+.library-path-text {
+  font-family: Consolas, monospace;
+  font-size: 13px;
+  color: #fff;
+  word-break: break-all;
+}
+
+@media (max-width: 900px) {
+  .console-hero-grid {
+    grid-template-columns: 1fr;
+  }
+}
+

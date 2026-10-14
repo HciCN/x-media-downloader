@@ -576,6 +576,85 @@ class VideoStreamingHTTPRequestHandler(SimpleHTTPRequestHandler):
             self.wfile.write(body)
             return
 
+        # API: 服务器运行状态与统计 (Web 控制总台)
+        if path == '/api/server_stats':
+            db = load_merged_db()
+            tasks = db.get('tasks', [])
+            items_map = db.get('items', {})
+            total_items = sum(len(v) for v in items_map.values())
+            video_count = 0
+            image_count = 0
+            for items in items_map.values():
+                for it in items:
+                    if it.get('mediaType') == 'video':
+                        video_count += 1
+                    else:
+                        image_count += 1
+            libs = load_library_config()
+            lib_info = []
+            for idx, p in enumerate(libs):
+                lib_info.append({
+                    'id': idx,
+                    'path': p,
+                    'exists': os.path.exists(p),
+                    'is_default': (os.path.normpath(p) == os.path.normpath(DL_DIR))
+                })
+            lan_ip = get_lan_ip()
+            port = self.server.server_port
+            mobile_url = f"http://{lan_ip}:{port}/mobile.html"
+            tunnel_url = global_tunnel_url
+            tunnel_mobile_url = f"{tunnel_url}mobile.html" if tunnel_url else None
+            
+            body = json.dumps({
+                'success': True,
+                'server_status': 'running',
+                'lan_ip': lan_ip,
+                'port': port,
+                'local_url': f"http://{lan_ip}:{port}/",
+                'mobile_url': mobile_url,
+                'tunnel_url': tunnel_url,
+                'tunnel_mobile_url': tunnel_mobile_url,
+                'task_count': len(tasks),
+                'total_media': total_items,
+                'video_count': video_count,
+                'image_count': image_count,
+                'library_count': len(libs),
+                'libraries': lib_info
+            }, ensure_ascii=False).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.send_header('Content-Length', str(len(body)))
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        # API: 动态二维码生成 (手机扫码直连)
+        if path == '/api/qrcode':
+            qs = urllib.parse.parse_qs(parsed.query)
+            target = qs.get('url', [''])[0]
+            if not target:
+                lan_ip = get_lan_ip()
+                target = f"http://{lan_ip}:{self.server.server_port}/mobile.html"
+            try:
+                import io
+                import qrcode
+                img = qrcode.make(target)
+                buf = io.BytesIO()
+                img.save(buf, format='PNG')
+                qr_bytes = buf.getvalue()
+                self.send_response(200)
+                self.send_header('Content-Type', 'image/png')
+                self.send_header('Content-Length', str(len(qr_bytes)))
+                self.send_header('Cache-Control', 'max-age=60')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(qr_bytes)
+                return
+            except Exception as e:
+                self.send_error(500, f"QR generation failed: {e}")
+                return
+
         return super().do_GET()
 
     def do_POST(self):
