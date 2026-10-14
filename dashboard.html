@@ -93,8 +93,17 @@
             <span>🚀 手机与客户端串流接入</span>
           </h3>
 
+          <div class="console-info-row" style="margin-bottom:14px;">
+            <span class="console-info-label">💻 电脑本机控制台 (双击已自动秒开)</span>
+            <div class="console-link-box">
+              <input type="text" readonly id="console-local-url" class="settings-input" value="http://127.0.0.1:8899/dashboard.html" style="flex:1; border-color:var(--primary);" />
+              <button class="btn btn-secondary btn-copy-url" data-target="console-local-url">复制</button>
+              <a href="http://127.0.0.1:8899/dashboard.html" target="_blank" id="console-local-open" class="btn btn-secondary" style="text-decoration:none;">打开</a>
+            </div>
+          </div>
+
           <div class="console-info-row">
-            <span class="console-info-label">局域网串流地址 (同一 Wi-Fi)</span>
+            <span class="console-info-label">📱 手机局域网串流地址 (同一 Wi-Fi)</span>
             <div class="console-link-box">
               <input type="text" readonly id="console-lan-url" class="settings-input" value="正在获取..." style="flex:1;" />
               <button class="btn btn-secondary btn-copy-url" data-target="console-lan-url">复制</button>

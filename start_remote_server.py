@@ -371,6 +371,17 @@ def get_lan_ip():
 
     return candidates[0] if candidates else '127.0.0.1'
 
+class DualStackServer(ThreadingHTTPServer):
+    """支持 IPv6 与 IPv4 双栈 (Dual-Stack) 的并发 HTTP 服务，确保 localhost、127.0.0.1 及局域网 IP 均可无缝访问"""
+    address_family = socket.AF_INET6
+
+    def server_bind(self):
+        try:
+            self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        except Exception:
+            pass
+        super().server_bind()
+
 class VideoStreamingHTTPRequestHandler(SimpleHTTPRequestHandler):
     """
     支持 HTTP 206 Partial Content (Range 请求) 与移动端远程数据 API 的流媒体处理器
@@ -610,7 +621,9 @@ class VideoStreamingHTTPRequestHandler(SimpleHTTPRequestHandler):
                 'server_status': 'running',
                 'lan_ip': lan_ip,
                 'port': port,
-                'local_url': f"http://{lan_ip}:{port}/",
+                'local_url': f"http://127.0.0.1:{port}/",
+                'localhost_url': f"http://127.0.0.1:{port}/dashboard.html",
+                'lan_url': f"http://{lan_ip}:{port}/",
                 'mobile_url': mobile_url,
                 'tunnel_url': tunnel_url,
                 'tunnel_mobile_url': tunnel_mobile_url,
@@ -867,26 +880,32 @@ def start_cloudflare_tunnel(port):
     return None
 
 def print_banner(lan_ip, port, tunnel_url, scanned_tasks):
-    local_url = f"http://{lan_ip}:{port}/"
+    local_url = f"http://127.0.0.1:{port}/"
+    lan_url = f"http://{lan_ip}:{port}/"
     mobile_local_url = f"http://{lan_ip}:{port}/mobile.html"
-    mobile_tunnel_url = f"{tunnel_url}/mobile.html" if tunnel_url else None
+    mobile_tunnel_url = f"{tunnel_url}mobile.html" if tunnel_url else None
     qr_target = mobile_tunnel_url if mobile_tunnel_url else mobile_local_url
 
     print("\n" + "=" * 68)
-    print("  🚀 X-Media-Downloader 手机抖音沉浸模式 & 局域网/公网服务已就绪！")
+    print("  🚀 X-Media-Downloader 本地控制总台 & 局域网/公网流媒体服务已就绪！")
     print("=" * 68)
+
+    print("\n  💻 [电脑本机控制总台 (双击已自动在默认浏览器中打开)]：")
+    print(f"  👉 本机总台直达 : \033[92mhttp://127.0.0.1:{port}/dashboard.html\033[0m")
+    print(f"  👉 本机备用直达 : http://localhost:{port}/dashboard.html")
+
+    print("\n  📶 [手机与同局域网设备直连 (需在同一 Wi-Fi)]：")
+    print(f"  📱 手机抖音刷片 : \033[96m{mobile_local_url}\033[0m")
+    print(f"  💻 局域网控制台 : {lan_url}dashboard.html")
+    print(f"  📲 安卓全屏软件 (APK): \033[93mhttp://127.0.0.1:{port}/XMediaViewer.apk\033[0m")
 
     if tunnel_url:
         print("\n  🌐 [方案三：全球公网 HTTPS 直达 (免 Wi-Fi 限制 / 4G/5G 随时刷)]：")
         print(f"  📱 手机抖音刷片 : \033[92m{mobile_tunnel_url}\033[0m")
-        print(f"  💻 电脑管理看板 : {tunnel_url}/dashboard.html")
-    
-    print("\n  📶 [方案一：家庭 Wi-Fi 局域网直连]：")
-    print(f"  📱 手机抖音刷片 : \033[96m{mobile_local_url}\033[0m")
-    print(f"  💻 电脑管理看板 : {local_url}dashboard.html")
-    print(f"  📲 安卓全屏软件 (APK): \033[93m{local_url}XMediaViewer.apk\033[0m")
-    if tunnel_url:
-        print(f"  📲 安卓全屏软件 (公网APK): \033[93m{tunnel_url}/XMediaViewer.apk\033[0m")
+        print(f"  💻 公网管理看板 : {tunnel_url}dashboard.html")
+        print(f"  📲 安卓全屏软件 (公网APK): \033[93m{tunnel_url}XMediaViewer.apk\033[0m")
+    else:
+        print("\n  🌐 [方案三：全球公网 HTTPS 隧道正在后台连接中...无需等待，本地已可正常秒开]")
 
     # 尝试打印 ASCII 二维码 (手机直接扫码打开抖音短视频流)
     try:
@@ -905,18 +924,18 @@ def print_banner(lan_ip, port, tunnel_url, scanned_tasks):
         status = "✅ 正常" if os.path.exists(lib) else "⚠️ 路径不存在"
         tag = " (系统默认)" if os.path.normpath(lib) == os.path.normpath(DL_DIR) else " (自定义添加)"
         print(f"     [{idx}] {lib}{tag} - {status}")
-    print("     💡 提示：可直接编辑 library_config.json 或使用 --add-dir 挂载任意磁盘文件夹！")
+    print("     💡 提示：在 Web 控制总台【📁 媒体库管理】中可随时一键添加/管理任意文件夹！")
 
     print("\n  🎬 [扫描到的合集与任务]：")
     if scanned_tasks:
         for t in scanned_tasks:
             print(f"     ✅ {t['task_name']} (含 {t['media_count']} 个媒体文件)")
     else:
-        print("     ℹ️ 暂未扫描到媒体文件夹，放入 MP4/图片文件后在手机端点击【重新扫描片库】即可。")
+        print("     ℹ️ 暂未扫描到媒体文件夹，放入 MP4/图片文件后在控制台点击【重新扫描片库】即可。")
 
     print("\n  💡 使用小贴士：")
-    print("  1. 想要【真正100%全屏免浏览器地址栏】：手机直接下载安装上面的【XMediaViewer.apk】！")
-    print("  2. 点击博主即可全屏预览所有图片，并流畅播放高码率 MP4（支持进度条拖拽快进）；")
+    print("  1. 双击脚本已自动在您的默认浏览器打开 Web 控制总台，可直接在控制总台管理片库与查看统计；")
+    print("  2. 手机想【真正 100% 全屏免浏览器地址栏】：手机扫码或下载安装【XMediaViewer.apk】！")
     print("  3. 彻底免去把视频拷贝到手机的繁琐步骤，零占用手机内存！")
     print("\n  （按 Ctrl + C 可随时安全停止服务）")
     print("=" * 68 + "\n")
@@ -928,6 +947,7 @@ def main():
     parser = argparse.ArgumentParser(description='X-Media-Downloader Remote Streaming Server')
     parser.add_argument('--add-dir', help='添加自定义媒体库文件夹路径并退出')
     parser.add_argument('--list-dirs', action='store_true', help='列出当前已配置的媒体库文件夹并退出')
+    parser.add_argument('--no-browser', action='store_true', help='启动时不自动打开浏览器')
     args, _ = parser.parse_known_args()
 
     if args.add_dir:
@@ -961,26 +981,61 @@ def main():
     server = None
     for p in [8899, 18080, 28080, 38080, 8090, 8000]:
         try:
-            server = ThreadingHTTPServer(('0.0.0.0', p), VideoStreamingHTTPRequestHandler)
+            # 优先采用 IPv6/IPv4 双栈绑定 '::' (同时兼容 localhost, 127.0.0.1, 局域网 IP)
+            server = DualStackServer(('::', p), VideoStreamingHTTPRequestHandler)
             server.daemon_threads = True
             break
         except Exception:
-            continue
+            try:
+                # 兼容降级至 IPv4 单栈绑定 '0.0.0.0'
+                server = ThreadingHTTPServer(('0.0.0.0', p), VideoStreamingHTTPRequestHandler)
+                server.daemon_threads = True
+                break
+            except Exception:
+                continue
 
     if not server:
-        server = ThreadingHTTPServer(('0.0.0.0', 0), VideoStreamingHTTPRequestHandler)
-        server.daemon_threads = True
+        try:
+            server = DualStackServer(('::', 0), VideoStreamingHTTPRequestHandler)
+            server.daemon_threads = True
+        except Exception:
+            server = ThreadingHTTPServer(('0.0.0.0', 0), VideoStreamingHTTPRequestHandler)
+            server.daemon_threads = True
 
     actual_port = server.server_port
-
-    # 启动 Cloudflare 隧道 (方案三)
-    print(">> 正在建立 Cloudflare 全球快速安全公网隧道 (方案三)...")
-    tunnel_url = start_cloudflare_tunnel(actual_port)
 
     # 扫描已下载博主
     scanned_tasks, _ = scan_downloaded_media()
 
-    print_banner(lan_ip, actual_port, tunnel_url, scanned_tasks)
+    # 立即打印就绪看板 (零延迟，无需等待网络隧道)
+    print_banner(lan_ip, actual_port, global_tunnel_url, scanned_tasks)
+
+    # 自动在默认浏览器中打开 WEB 控制总台
+    if not args.no_browser:
+        import webbrowser
+        def auto_open_browser():
+            time.sleep(0.5)
+            target_url = f"http://127.0.0.1:{actual_port}/dashboard.html"
+            print(f">> 🌐 正在自动为您在默认浏览器中打开 WEB 控制总台: {target_url}\n")
+            try:
+                webbrowser.open(target_url, new=1)
+            except Exception as e:
+                print(f">> 自动打开浏览器提示: {e}")
+
+        threading.Thread(target=auto_open_browser, daemon=True).start()
+
+    # 异步在后台启动 Cloudflare 隧道 (方案三，在后台启动避免阻塞本地 Web 控制总台毫秒级启动与网页打开)
+    def bg_start_tunnel():
+        print(">> 正在建立 Cloudflare 全球快速安全公网隧道 (方案三，后台连接中)...")
+        t_url = start_cloudflare_tunnel(actual_port)
+        if t_url:
+            print("\n" + "=" * 60)
+            print("  🌐 [✓] Cloudflare 全球公网 HTTPS 隧道已成功连接！")
+            print(f"  📱 手机公网抖音刷片: \033[92m{t_url}mobile.html\033[0m")
+            print(f"  💻 公网管理看板: {t_url}dashboard.html")
+            print("=" * 60 + "\n")
+
+    threading.Thread(target=bg_start_tunnel, daemon=True).start()
 
     try:
         server.serve_forever()

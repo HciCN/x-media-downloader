@@ -64,6 +64,15 @@
       switchView('console');
     }
 
+    // 局域网/本机服务模式下，定时同步后台状态与 Cloudflare 隧道上线
+    if (!isExtensionContext) {
+      setInterval(() => {
+        if (state.currentTab === 'console') {
+          loadServerStats();
+        }
+      }, 4000);
+    }
+
     // 仅在 Chrome 扩展环境下监听来自后台的实时下载进度
     if (isExtensionContext && chrome.runtime?.onMessage) {
       chrome.runtime.onMessage.addListener((msg) => {
@@ -255,6 +264,13 @@
         document.getElementById('console-video-count').textContent = res.video_count || 0;
         document.getElementById('console-image-count').textContent = res.image_count || 0;
         document.getElementById('console-lib-count').textContent = res.library_count || 0;
+
+        // 本机控制台地址
+        const localInput = document.getElementById('console-local-url');
+        const localOpen = document.getElementById('console-local-open');
+        const localUrl = res.localhost_url || (window.location.origin + '/dashboard.html');
+        if (localInput) localInput.value = localUrl;
+        if (localOpen) localOpen.href = localUrl;
 
         // 局域网地址
         const lanInput = document.getElementById('console-lan-url');

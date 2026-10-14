@@ -1,9 +1,16 @@
 @echo off
-title X-Media-Downloader °²×¿Ô¶³ÌÁ÷Ã½Ìå·þÎñ
+chcp 65001 >nul
+title X-Media-Downloader æœ¬åœ°æµåª’ä½“æœåŠ¡ä¸Ž WEB æŽ§åˆ¶æ€»å°
 set PYTHONDONTWRITEBYTECODE=1
 set PYTHONIOENCODING=utf-8
 
 cd /d "%~dp0"
+
+echo ========================================================
+echo   æ­£åœ¨å¯åŠ¨ X-Media æœ¬åœ°æµåª’ä½“æœåŠ¡ä¸Ž WEB æŽ§åˆ¶æ€»å°...
+echo   æœåŠ¡å°±ç»ªåŽå°†è‡ªåŠ¨åœ¨æ‚¨çš„é»˜è®¤æµè§ˆå™¨ä¸­æ‰“å¼€æŽ§åˆ¶å°
+echo ========================================================
+echo.
 
 where python >nul 2>&1
 if %errorlevel% equ 0 (
@@ -19,12 +26,12 @@ if %errorlevel% equ 0 (
 
 echo.
 echo ========================================================
-echo [´íÎó] Î´ÔÚÏµÍ³ÖÐ¼ì²âµ½ Python ÔËÐÐ»·¾³£¡
-echo ÇëÈ·±£µçÄÔÒÑ°²×° Python 3 ²¢Ìí¼Óµ½ PATH »·¾³±äÁ¿¡£
-echo ¹Ù·½ÏÂÔØµØÖ·: https://www.python.org/downloads/
+echo [é”™è¯¯] æœªåœ¨æ‚¨çš„ç”µè„‘ä¸Šæ£€æµ‹åˆ° Python çŽ¯å¢ƒï¼
+echo è¯·å…ˆå®‰è£… Python 3 å¹¶å‹¾é€‰ Add Python to PATHï¼ˆæ·»åŠ åˆ°çŽ¯å¢ƒå˜é‡ï¼‰ã€‚
+echo å®˜æ–¹ä¸‹è½½åœ°å€: https://www.python.org/downloads/
 echo ========================================================
 
 :finish
 echo.
-echo ·þÎñÒÑÍË³ö¡£°´ÈÎÒâ¼ü¹Ø±Õ´Ë´°¿Ú...
+echo æœåŠ¡å·²é€€å‡ºã€‚æŒ‰ä»»æ„é”®å…³é—­æ­¤çª—å£...
 pause >nul
