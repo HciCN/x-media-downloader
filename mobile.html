@@ -576,6 +576,105 @@
       text-align: center;
       padding: 24px;
     }
+
+    /* =========================================================================
+       清屏 / 无干扰全屏纯净模式 (完全隐藏文字、图标、标题)
+       ========================================================================= */
+    .top-nav, .right-bar, .bottom-info-area {
+      transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1), transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    body.clean-mode .top-nav {
+      opacity: 0 !important;
+      pointer-events: none !important;
+      transform: translateY(-30px);
+    }
+
+    body.clean-mode .right-bar {
+      opacity: 0 !important;
+      pointer-events: none !important;
+      transform: translateX(50px);
+    }
+
+    body.clean-mode .bottom-info-area {
+      opacity: 0 !important;
+      pointer-events: none !important;
+      transform: translateY(35px);
+    }
+
+    body.clean-mode .progress-bar-wrap {
+      opacity: 0.35;
+    }
+
+    /* 退出清屏悬浮胶囊按钮 */
+    .exit-clean-btn {
+      position: fixed;
+      top: max(16px, env(safe-area-inset-top, 16px));
+      right: 16px;
+      z-index: 99;
+      background: rgba(0, 0, 0, 0.65);
+      border: 1px solid rgba(255, 255, 255, 0.28);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      color: #fff;
+      padding: 7px 15px;
+      border-radius: 24px;
+      font-size: 12.5px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.6);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(-12px);
+      transition: opacity 0.25s, transform 0.25s, background-color 0.15s;
+      cursor: pointer;
+    }
+
+    body.clean-mode .exit-clean-btn {
+      opacity: 0.85;
+      pointer-events: auto;
+      transform: translateY(0);
+    }
+
+    body.clean-mode .exit-clean-btn:active {
+      transform: scale(0.94);
+      opacity: 1;
+      background: rgba(29, 155, 240, 0.85);
+    }
+
+    /* 开启/关闭清屏模式短暂屏幕提示 */
+    .clean-toast {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0.85);
+      background: rgba(0, 0, 0, 0.82);
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      color: #fff;
+      padding: 12px 22px;
+      border-radius: 24px;
+      font-size: 14px;
+      font-weight: 700;
+      z-index: 95;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.7);
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    .clean-toast.show {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+    }
   </style>
 </head>
 <body>
@@ -589,6 +688,9 @@
     </div>
 
     <div class="top-actions">
+      <button class="icon-pill-btn" id="btn-toggle-clean" title="清屏模式 (隐藏所有图标与文字)">
+        <span>👁️ 清屏</span>
+      </button>
       <button class="icon-pill-btn" id="btn-sound-toggle">
         <span id="sound-icon">🔇</span>
       </button>
@@ -600,6 +702,20 @@
       </a>
     </div>
   </header>
+
+  <!-- 退出清屏悬浮按钮 -->
+  <button class="exit-clean-btn" id="btn-exit-clean" title="点击退出清屏，恢复图标与文字">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+      <circle cx="12" cy="12" r="3"></circle>
+    </svg>
+    <span>恢复显示</span>
+  </button>
+
+  <!-- 清屏模式提示弹条 -->
+  <div class="clean-toast" id="clean-toast">
+    <span>👁️ 已开启清屏模式 · 纯净全屏无干扰</span>
+  </div>
 
   <!-- 初次静音解锁提示 -->
   <div class="sound-prompt-bubble" id="sound-prompt" style="display:none;">
@@ -771,6 +887,17 @@
                 <span class="action-btn-label">博主</span>
               </div>
 
+              <!-- 清屏无干扰快捷按钮 -->
+              <button class="action-btn btn-clean-slide" title="清屏模式 (隐藏文字与图标)">
+                <div class="action-btn-circle">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                    <line x1="1" y1="1" x2="23" y2="23"></line>
+                  </svg>
+                </div>
+                <span class="action-btn-label">清屏</span>
+              </button>
+
               ${tweetUrl ? `
                 <a href="${tweetUrl}" target="_blank" class="action-btn">
                   <div class="action-btn-circle">
@@ -830,6 +957,15 @@
             dlBtn.onclick = (e) => {
               e.stopPropagation();
               downloadMedia(item);
+            };
+          }
+
+          // 绑定清屏按钮
+          const cleanBtn = slide.querySelector('.btn-clean-slide');
+          if (cleanBtn) {
+            cleanBtn.onclick = (e) => {
+              e.stopPropagation();
+              toggleCleanMode(true);
             };
           }
 
@@ -946,14 +1082,45 @@
         }
       }
 
-      // 5. 屏幕手势 (单击暂停/播放，双击爱心)
+      // 5. 屏幕手势 (单击暂停/播放，双击爱心，长按450ms清屏)
       function bindTapGestures(slide, item) {
         let lastTap = 0;
         let tapTimeout = null;
+        let longPressTimer = null;
+        let isLongPress = false;
+
+        // 长按 450ms 触发清屏 (仿抖音长按清屏体验)
+        slide.addEventListener('touchstart', (e) => {
+          if (e.target.closest('.right-bar, .bottom-info-area, .progress-bar-wrap, .exit-clean-btn')) return;
+          isLongPress = false;
+          longPressTimer = setTimeout(() => {
+            isLongPress = true;
+            if (navigator.vibrate) {
+              try { navigator.vibrate(35); } catch(err) {}
+            }
+            toggleCleanMode();
+          }, 450);
+        }, { passive: true });
+
+        slide.addEventListener('touchmove', () => {
+          if (longPressTimer) clearTimeout(longPressTimer);
+        }, { passive: true });
+
+        slide.addEventListener('touchend', () => {
+          if (longPressTimer) clearTimeout(longPressTimer);
+        }, { passive: true });
+
+        slide.addEventListener('touchcancel', () => {
+          if (longPressTimer) clearTimeout(longPressTimer);
+        }, { passive: true });
 
         slide.onclick = (e) => {
-          // 排除右侧按钮或底部链接
-          if (e.target.closest('.right-bar, .bottom-info-area, .progress-bar-wrap')) return;
+          if (isLongPress) {
+            isLongPress = false;
+            return;
+          }
+          // 排除右侧按钮、底部链接、退出清屏按钮
+          if (e.target.closest('.right-bar, .bottom-info-area, .progress-bar-wrap, .exit-clean-btn')) return;
 
           const now = Date.now();
           if (now - lastTap < 300) {
@@ -1103,12 +1270,53 @@
         a.remove();
       }
 
+      // 10. 清屏 / 隐藏文字与图标 (纯净全屏无干扰体验)
+      function toggleCleanMode(force) {
+        const isClean = typeof force === 'boolean' ? force : !document.body.classList.contains('clean-mode');
+        state.isCleanMode = isClean;
+        if (isClean) {
+          document.body.classList.add('clean-mode');
+          showToast('👁️ 已开启全屏纯净模式 (长按屏幕或点右上角恢复)');
+        } else {
+          document.body.classList.remove('clean-mode');
+          showToast('✨ 已恢复操作图标');
+        }
+      }
+
+      function showToast(msg) {
+        const toast = document.getElementById('clean-toast');
+        if (!toast) return;
+        toast.innerHTML = `<span>${msg}</span>`;
+        toast.classList.add('show');
+        clearTimeout(toast._timer);
+        toast._timer = setTimeout(() => {
+          toast.classList.remove('show');
+        }, 1800);
+      }
+
+      // 绑定清屏控制按钮
+      const btnToggleClean = document.getElementById('btn-toggle-clean');
+      if (btnToggleClean) {
+        btnToggleClean.onclick = (e) => {
+          e.stopPropagation();
+          toggleCleanMode(true);
+        };
+      }
+
+      const btnExitClean = document.getElementById('btn-exit-clean');
+      if (btnExitClean) {
+        btnExitClean.onclick = (e) => {
+          e.stopPropagation();
+          toggleCleanMode(false);
+        };
+      }
+
       function escapeHtml(str) {
         if (!str) return '';
         return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
       }
 
-      // 键盘上下键支持 (方便桌面预览)
+      // 键盘上下键与清屏按键支持 (方便桌面预览)
       document.addEventListener('keydown', (e) => {
         if (e.key === 'ArrowDown' || e.key === 'j') {
           const next = state.slideElements[state.currentIndex + 1];
@@ -1119,6 +1327,8 @@
         } else if (e.key === ' ') {
           const cur = state.slideElements[state.currentIndex];
           if (cur) togglePlayState(cur);
+        } else if (e.key === 'c' || e.key === 'C') {
+          toggleCleanMode();
         }
       });
 

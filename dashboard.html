@@ -277,6 +277,12 @@
         <span class="xmd-gallery-tag" id="lightbox-type-badge">MP4</span>
       </div>
       <div class="xmd-gallery-actions">
+        <button class="xmd-gallery-btn-icon" id="lightbox-clean-btn" title="清屏模式 / 隐藏界面 (快捷键 C)">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+        </button>
         <button class="xmd-gallery-btn-icon" id="lightbox-close-btn" title="关闭 (Esc)">
           <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round">
             <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -285,6 +291,11 @@
         </button>
       </div>
     </div>
+
+    <!-- 退出清屏悬浮按钮 (纯净模式下显现) -->
+    <button class="lightbox-exit-clean-btn" id="lightbox-exit-clean-btn" title="退出清屏 (点击或按 C 键)">
+      <span>👁️ 退出清屏 (按 C)</span>
+    </button>
 
     <!-- 左右翻页按钮 (PC端明显悬浮，手机端触控优化) -->
     <button class="xmd-gallery-arrow xmd-gallery-prev" id="lightbox-prev-btn" title="上一张 (←)">

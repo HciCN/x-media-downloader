@@ -773,20 +773,39 @@
     const track = document.getElementById('lightbox-track');
     const stage = document.getElementById('lightbox-stage');
 
+    const cleanBtn = document.getElementById('lightbox-clean-btn');
+    const exitCleanBtn = document.getElementById('lightbox-exit-clean-btn');
+
+    function toggleLightboxClean(force) {
+      if (!box) return;
+      const isClean = typeof force === 'boolean' ? force : !box.classList.contains('clean-mode');
+      if (isClean) {
+        box.classList.add('clean-mode');
+      } else {
+        box.classList.remove('clean-mode');
+      }
+    }
+
+    if (cleanBtn) cleanBtn.onclick = (e) => { e.stopPropagation(); toggleLightboxClean(true); };
+    if (exitCleanBtn) exitCleanBtn.onclick = (e) => { e.stopPropagation(); toggleLightboxClean(false); };
     if (closeBtn) closeBtn.onclick = closeLightbox;
     if (prevBtn) prevBtn.onclick = (e) => { e.stopPropagation(); slideTransition('prev'); };
     if (nextBtn) nextBtn.onclick = (e) => { e.stopPropagation(); slideTransition('next'); };
 
-    // 点击背景空白处关闭
+    // 点击背景空白处关闭 (若正处于清屏纯净模式，点击立即退出清屏)
     if (stage) {
       stage.onclick = (e) => {
+        if (box && box.classList.contains('clean-mode')) {
+          toggleLightboxClean(false);
+          return;
+        }
         if (e.target === stage || e.target === track || e.target.id === 'lightbox-media-box') {
           closeLightbox();
         }
       };
     }
 
-    // 键盘支持 (左右箭头、A/D、Esc、空格播放/暂停)
+    // 键盘支持 (左右箭头、A/D翻页、Esc退出、C切换清屏纯净模式、空格播放/暂停)
     document.addEventListener('keydown', (e) => {
       if (!box || !box.classList.contains('xmd-active')) return;
       if (e.key === 'Escape') {
@@ -795,6 +814,8 @@
         slideTransition('prev');
       } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
         slideTransition('next');
+      } else if (e.key === 'c' || e.key === 'C') {
+        toggleLightboxClean();
       } else if (e.key === ' ' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
         const vid = box.querySelector('video');
         if (vid) {
@@ -1127,6 +1148,7 @@
     const tweetInfo = document.getElementById('lightbox-tweet-info');
     if (box) {
       box.classList.remove('xmd-active');
+      box.classList.remove('clean-mode');
       box.style.backgroundColor = '';
     }
     if (track) {
